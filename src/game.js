@@ -358,7 +358,6 @@ let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let panStartCamera = { x: 0, y: 0 };
 
-// Multi-tile drag tracking variables
 let dragStartGX = null;
 let dragStartGY = null;
 
@@ -407,14 +406,17 @@ function exportEditorLevel() {
   });
 }
 
-// ---- Input: keyboard ----
+// ---- Input: keyboard (fixed with preventDefault) ----
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+  }
   if (e.code === 'Escape' && (state === 'editor' || state === 'play')) {
     state = 'menu';
   }
-});
+}, { passive: false });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 function isDown(...codes) { return codes.some(c => keys[c]); }
 
@@ -578,9 +580,18 @@ function resolveCollisions(axis) {
 
 function checkHazards() {
   for (const t of currentLevel.tiles) {
-    if (HAZARD_TYPES.includes(t.type) && rectsOverlap(player, t)) {
-      resetPlayer('hazard');
-      return;
+    if (HAZARD_TYPES.includes(t.type)) {
+      // Shrunk hitbox matching the spike visual triangle
+      const hazardHitbox = {
+        x: t.x + (t.w * 0.2), 
+        y: t.y + (t.h * 0.5), 
+        w: t.w * 0.6,
+        h: t.h * 0.5
+      };
+      if (rectsOverlap(player, hazardHitbox)) {
+        resetPlayer('hazard');
+        return;
+      }
     }
   }
 }
@@ -605,7 +616,8 @@ function updatePlay(dt) {
     }
   }
 
-  player.vy += GRAVITY * dt;
+  // Apply gravity with a terminal velocity cap to prevent tunneling
+  player.vy = Math.min(player.vy + (GRAVITY * dt), 800);
 
   player.x += player.vx * dt;
   resolveCollisions('x');
@@ -706,7 +718,7 @@ function drawEditor() {
   const startGY = Math.floor(camera.y / TILE_SIZE);
   for (let gy = startGY; gy * TILE_SIZE - camera.y < canvas.height; gy++) {
     const sy = Math.max(40, gy * TILE_SIZE - camera.y);
-   ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
   }
 
   for (const [key, type] of editorTiles.entries()) {
