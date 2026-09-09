@@ -14,15 +14,6 @@
  * }
  * type is one of: 'ground' | 'rock' | 'wood' (solid) or 'spike' (hazard,
  * non-solid — touching it resets the player instead of standing on it).
- *
- * BUG FIX NOTE: levels used to decide "player fell off the level" using
- * the JSON's declared `height` directly. If that value didn't actually
- * match the level's real vertical extent (e.g. after resizing, or a
- * hand-edited file), the fall-check could be true from the very first
- * frame, silently resetting the player every frame — most noticeable
- * right when jumping, since that's when the snap-back becomes visible.
- * sanitizeLevel() below derives safe bounds from the actual tiles
- * instead of trusting the declared numbers blindly.
  */
 
 const REPO_BASE = window.REPO_BASE || '';
@@ -95,7 +86,7 @@ const DEFAULT_LEVEL = {
   ]
 };
 
-// ---- Level sanitation (this is the bug fix) ----
+// ---- Level sanitation ----
 function sanitizeLevel(raw) {
   const lvl = {
     width: Number(raw.width) || 800,
@@ -113,11 +104,13 @@ function sanitizeLevel(raw) {
   const maxRight = lvl.tiles.reduce((m, t) => Math.max(m, t.x + t.w), 0);
   const maxBottom = lvl.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
 
-  // Trust the declared size only if it's at least as big as the actual
-  // content; otherwise derive it, so a bad/stale height field can never
-  // put the player below the "fell off" threshold at spawn.
+  // Preserve declared height if valid to allow intentional gaps/pits below platforms without shifting the floor threshold incorrectly on jump.
   lvl.width = Math.max(lvl.width, maxRight + 200, canvas.width);
-  lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
+  if (raw.height && Number(raw.height) > 0) {
+    lvl.height = Math.max(Number(raw.height), canvas.height);
+  } else {
+    lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
+  }
 
   lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 32, lvl.playerStart.x));
   lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 32, lvl.playerStart.y));
@@ -128,6 +121,7 @@ function sanitizeLevel(raw) {
 let currentLevel = sanitizeLevel(DEFAULT_LEVEL);
 
 function levelFloorY(level) {
+  if (!level.tiles || level.tiles.length === 0) return level.height;
   const maxBottom = level.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
   return Math.max(level.height, maxBottom);
 }
@@ -135,10 +129,6 @@ function levelFloorY(level) {
 // ---- Player ----
 const player = { x: 60, y: 300, w: 32, h: 32, vx: 0, vy: 0, onGround: false };
 function resetPlayer(reason) {
-  // DEBUG: logs why/where a reset happened. If the jump-reset bug shows
-  // up again, open the browser console right when it happens and send
-  // back the exact line it prints — that tells us definitively which
-  // branch is firing instead of guessing.
   console.log(
     `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
     `floorY=${levelFloorY(currentLevel).toFixed(1)} onGround=${player.onGround}`
@@ -155,10 +145,7 @@ const camera = { x: 0, y: 0 };
 let state = 'menu'; // 'menu' | 'editor' | 'play'
 
 // ============================================================
-// DOM controls (editor panel + hidden file inputs). These are
-// plain elements appended below the canvas — no clipboard API,
-// no <base href> tricks, just things proven to work reliably
-// inside the Apps Script HtmlService sandbox.
+// DOM controls (editor panel + hidden file inputs)
 // ============================================================
 
 const editorPanel = document.createElement('div');
@@ -352,7 +339,7 @@ uploadInput.addEventListener('change', () => {
   uploadInput.value = '';
 });
 
-// --- Main menu's Import: a separate hidden file input, loads straight into play ---
+// --- Main menu's Import ---
 const menuImportInput = document.createElement('input');
 menuImportInput.type = 'file';
 menuImportInput.accept = 'application/json,.json';
@@ -399,12 +386,11 @@ const editorToolbar = (() => {
     x += 86;
     return btn;
   });
-  // Pan (hand) tool sits immediately left of Menu, as requested.
   buttons.push({ id: 'pan', label: '✋ Pan', x: canvas.width - 180, y: 5, w: 80, h: 28 });
   buttons.push({ id: 'menu', label: 'Menu', x: canvas.width - 90, y: 5, w: 80, h: 28 });
   return buttons;
 })();
-let lastPaintTool = 'ground'; // remembered so toggling Pan off restores it
+let lastPaintTool = 'ground';
 
 function loadLevelIntoEditor(lvl) {
   editorTiles.clear();
@@ -474,7 +460,7 @@ function applyBrush(gx, gy) {
 }
 
 function paintAt(pos) {
-  if (pos.y < 40) return; // toolbar strip
+  if (pos.y < 40) return;
   const { gx, gy } = getGridPos(pos);
   
   if (dragStartGX === null || dragStartGY === null) {
@@ -482,7 +468,6 @@ function paintAt(pos) {
     dragStartGY = gy;
     applyBrush(gx, gy);
   } else {
-    // Multi-tile drag painting (Bresenham's line algorithm for smooth continuous placement)
     let x0 = dragStartGX, y0 = dragStartGY;
     const x1 = gx, y1 = gy;
     const dx = Math.abs(x1 - x0);
@@ -534,7 +519,6 @@ canvas.addEventListener('mousedown', e => {
         if (b.id === 'menu') {
           state = 'menu';
         } else if (b.id === 'pan') {
-          // Toggle: Pan -> back to whatever tool was active before Pan.
           if (editorTool === 'pan') editorTool = lastPaintTool;
           else { lastPaintTool = editorTool; editorTool = 'pan'; }
         } else {
@@ -587,7 +571,7 @@ function rectsOverlap(a, b) {
 
 function resolveCollisions(axis) {
   for (const t of currentLevel.tiles) {
-    if (HAZARD_TYPES.includes(t.type)) continue; // spikes are never solid
+    if (HAZARD_TYPES.includes(t.type)) continue;
     if (!rectsOverlap(player, t)) continue;
     if (axis === 'y') {
       if (player.vy > 0) {
@@ -648,8 +632,6 @@ function updatePlay(dt) {
 
   checkHazards();
 
-  // Fell off the bottom — uses the DERIVED floor, not a possibly-stale
-  // declared height. This is the actual bug fix.
   if (player.y > levelFloorY(currentLevel) + 150) {
     resetPlayer('fell-off');
   }
@@ -661,7 +643,7 @@ function updatePlay(dt) {
     Math.max(0, Math.min(currentLevel.height - viewH, player.y - viewH / 2));
 }
 
-// ---- Update: editor (camera scroll only) ----
+// ---- Update: editor ----
 function updateEditor(dt) {
   const viewH = canvas.height - 40;
   if (isDown('ArrowLeft')) camera.x -= SCROLL_SPEED * dt;
@@ -737,7 +719,7 @@ function drawEditor() {
   const startGY = Math.floor(camera.y / TILE_SIZE);
   for (let gy = startGY; gy * TILE_SIZE - camera.y < canvas.height; gy++) {
     const sy = Math.max(40, gy * TILE_SIZE - camera.y);
-    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
+   ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
   }
 
   for (const [key, type] of editorTiles.entries()) {
