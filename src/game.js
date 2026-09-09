@@ -133,15 +133,6 @@ function levelFloorY(level) {
 
 // ---- Player ----
 const player = { x: 60, y: 300, w: 32, h: 32, vx: 0, vy: 0, onGround: false };
-function resetPlayer(reason) {
-  console.log(
-    `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
-    `floorY=${levelFloorY(currentLevel).toFixed(1)} onGround=${player.onGround}`
-  );
-  player.x = currentLevel.playerStart.x;
-  player.y = currentLevel.playerStart.y;
-  player.vx = 0; player.vy = 0; player.onGround = false;
-}
 
 // ---- Camera ----
 const camera = { x: 0, y: 0 };
@@ -362,7 +353,6 @@ menuImportInput.addEventListener('change', () => {
     resetPlaylist();
     readJSONFile(file, sanitized => {
       currentLevel = sanitized;
-      resetPlayer('import');
       camera.x = 0; camera.y = 0;
       state = 'play';
     });
@@ -639,7 +629,6 @@ function checkHazards() {
     };
 
     if (rectsOverlap(player, hazardHitbox)) {
-      resetPlayer('hazard');
       return true;
     }
   }
@@ -690,7 +679,6 @@ function playPlaylistLevel(index) {
 
   playlistIndex = index;
   currentLevel = sanitizeLevel(levelPlaylist[index].level);
-  resetPlayer('playlist-level');
   camera.x = 0;
   camera.y = 0;
   levelComplete = false;
@@ -832,7 +820,6 @@ function updatePlay(dt) {
     // jumps must never cause an accidental spawn reset.
     const deathY = currentLevel.height + 300;
     if (player.y > deathY) {
-      resetPlayer('fell-off');
       return;
     }
   }
@@ -1015,7 +1002,6 @@ function loop(now) {
 }
 
 loadAssets(() => {
-  resetPlayer('init');
   lastTime = performance.now();
   requestAnimationFrame(loop);
 });
