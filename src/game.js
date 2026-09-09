@@ -782,52 +782,59 @@ async function importZIPPlaylist(file) {
 function updatePlay(dt) {
   if (levelComplete) return;
 
-  if (isDown('ArrowLeft', 'KeyA')) {
-    player.vx = -MOVE_SPEED;
-  } else if (isDown('ArrowRight', 'KeyD')) {
-    player.vx = MOVE_SPEED;
-  } else {
-    player.vx *= FRICTION_GROUND;
-    if (Math.abs(player.vx) < 5) player.vx = 0;
-  }
+  // Break large frame times into small physics steps. This prevents a jump
+  // from skipping through a platform and makes collision results stable.
+  const stepCount = Math.max(1, Math.ceil(dt / 0.008));
+  const step = dt / stepCount;
 
-  if (isDown('Space', 'ArrowUp', 'KeyW') && player.onGround) {
-    player.vy = JUMP_VELOCITY;
-    player.onGround = false;
-    if (assets.jumpSound) {
-      assets.jumpSound.currentTime = 0;
-      assets.jumpSound.play().catch(() => {});
+  for (let stepIndex = 0; stepIndex < stepCount; stepIndex++) {
+    if (isDown('ArrowLeft', 'KeyA')) {
+      player.vx = -MOVE_SPEED;
+    } else if (isDown('ArrowRight', 'KeyD')) {
+      player.vx = MOVE_SPEED;
+    } else {
+      player.vx *= FRICTION_GROUND;
+      if (Math.abs(player.vx) < 5) player.vx = 0;
     }
-  }
 
-  player.vy = Math.min(player.vy + GRAVITY * dt, 800);
+    // Jump only when the player is actually standing on a solid surface.
+    if (isDown('Space', 'ArrowUp', 'KeyW') && player.onGround) {
+      player.vy = JUMP_VELOCITY;
+      player.onGround = false;
+      if (assets.jumpSound) {
+        assets.jumpSound.currentTime = 0;
+        assets.jumpSound.play().catch(() => {});
+      }
+    }
 
-  const prevX = player.x;
-  const prevY = player.y;
+    player.vy = Math.min(player.vy + GRAVITY * step, 800);
 
-  // Resolve each axis independently using the previous position.
-  player.x += player.vx * dt;
-  resolveHorizontalCollisions(prevX);
+    const prevX = player.x;
+    const prevY = player.y;
 
-  player.y += player.vy * dt;
-  resolveVerticalCollisions(prevY);
+    player.x += player.vx * step;
+    resolveHorizontalCollisions(prevX);
 
-  // Keep the player inside the horizontal level bounds.
-  player.x = Math.max(0, Math.min(currentLevel.width - player.w, player.x));
+    player.y += player.vy * step;
+    resolveVerticalCollisions(prevY);
 
-  if (checkHazards()) return;
+    player.x = Math.max(0, Math.min(currentLevel.width - player.w, player.x));
 
-  if (checkGoal()) {
-    finishCurrentLevel();
-    return;
-  }
+    if (checkHazards()) return;
 
-  // This is intentionally based on the actual level bottom, not a tile's
-  // arbitrary lowest point. It prevents normal jumps from causing resets.
-  const deathY = Math.max(currentLevel.height, levelFloorY(currentLevel)) + 150;
-  if (player.y > deathY) {
-    resetPlayer('fell-off');
-    return;
+    if (checkGoal()) {
+      finishCurrentLevel();
+      return;
+    }
+
+    // Only reset after the player has genuinely fallen well below the level.
+    // Do not use the lowest tile as the reset point: floating platforms and
+    // jumps must never cause an accidental spawn reset.
+    const deathY = currentLevel.height + 300;
+    if (player.y > deathY) {
+      resetPlayer('fell-off');
+      return;
+    }
   }
 
   const viewW = canvas.width, viewH = canvas.height;
@@ -996,19 +1003,3 @@ function loop(now) {
   lastTime = now;
 
   updateUI();
-
-  if (state === 'play') updatePlay(dt);
-  else if (state === 'editor') updateEditor(dt);
-
-  if (state === 'menu') drawMenu();
-  else if (state === 'editor') drawEditor();
-  else if (state === 'play') drawPlay();
-
-  requestAnimationFrame(loop);
-}
-
-loadAssets(() => {
-  resetPlayer('init');
-  lastTime = performance.now();
-  requestAnimationFrame(loop);
-});
