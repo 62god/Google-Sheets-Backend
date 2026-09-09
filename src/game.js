@@ -2,19 +2,27 @@
  * src/game.js — lives on GitHub, fetched at runtime by the Apps Script dialog.
  * REPO_BASE is set as a global by Index.html before this file loads.
  *
- * States: 'menu' -> 'editor' (Create) or 'play' (after Import/default)
- *
  * Level JSON format:
  * {
- *   "width": 2400, "height": 450,
+ *   "width": 2400, "height": 440,
  *   "playerStart": { "x": 60, "y": 300 },
- *   "tiles": [ { "x": 0, "y": 410, "w": 800, "h": 40, "type": "ground" }, ... ]
+ *   "tiles": [
+ *     { "x": 0, "y": 400, "w": 40, "h": 40, "type": "ground" },
+ *     { "x": 200, "y": 360, "w": 40, "h": 40, "type": "spike" },
+ *     ...
+ *   ]
  * }
+ * type is one of: 'ground' | 'rock' | 'wood' (solid) or 'spike' (hazard,
+ * non-solid — touching it resets the player instead of standing on it).
  *
- * Export/Import both go through a plain textarea (copy/paste), not file
- * downloads — Apps Script's HtmlService sandbox has repeatedly proven
- * unreliable for anything download/base-href related, so this sticks to
- * the approach we know actually works here.
+ * BUG FIX NOTE: levels used to decide "player fell off the level" using
+ * the JSON's declared `height` directly. If that value didn't actually
+ * match the level's real vertical extent (e.g. after resizing, or a
+ * hand-edited file), the fall-check could be true from the very first
+ * frame, silently resetting the player every frame — most noticeable
+ * right when jumping, since that's when the snap-back becomes visible.
+ * sanitizeLevel() below derives safe bounds from the actual tiles
+ * instead of trusting the declared numbers blindly.
  */
 
 const REPO_BASE = window.REPO_BASE || '';
@@ -31,9 +39,13 @@ const FRICTION_GROUND = 0.85;
 const TILE_SIZE = 40;
 const SCROLL_SPEED = 400; // px/s, editor camera pan
 
-// ---- Tile visuals ----
-const TILE_FALLBACK_COLORS = { ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b' };
-const TILE_TYPES = ['ground', 'rock', 'wood'];
+// ---- Tile categories ----
+const SOLID_TYPES = ['ground', 'rock', 'wood'];
+const HAZARD_TYPES = ['spike'];
+const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES];
+const TILE_FALLBACK_COLORS = {
+  ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b', spike: '#c0392b'
+};
 
 // ---- Asset manifest ----
 const assetSources = {
@@ -41,6 +53,7 @@ const assetSources = {
   ground:    `${REPO_BASE}/assets/Sprites/ground.png`,
   rock:      `${REPO_BASE}/assets/Sprites/rock.png`,
   wood:      `${REPO_BASE}/assets/Sprites/wood.png`,
+  spike:     `${REPO_BASE}/assets/Sprites/spike.png`,
   jumpSound: `${REPO_BASE}/assets/audio/jump.mp3`
 };
 const assets = {};
@@ -60,7 +73,7 @@ function loadAssets(onDone) {
     } else {
       const img = new Image();
       img.onload = settle;
-      img.onerror = () => { console.warn(`Missing image asset: ${key}, using fallback color`); assets[key] = null; settle(); };
+      img.onerror = () => { console.warn(`Missing image asset: ${key}, using fallback`); assets[key] = null; settle(); };
       img.src = src;
       assets[key] = img;
     }
@@ -77,11 +90,47 @@ const DEFAULT_LEVEL = {
     { x: 150, y: 320, w: 120, h: 20, type: 'ground' },
     { x: 340, y: 250, w: 120, h: 20, type: 'wood' },
     { x: 540, y: 180, w: 140, h: 20, type: 'rock' },
-    { x: 20,  y: 200, w: 90,  h: 20, type: 'ground' }
+    { x: 20,  y: 200, w: 90,  h: 20, type: 'ground' },
+    { x: 260, y: 410, w: 40,  h: 40, type: 'spike' }
   ]
 };
 
-let currentLevel = JSON.parse(JSON.stringify(DEFAULT_LEVEL));
+// ---- Level sanitation (this is the bug fix) ----
+function sanitizeLevel(raw) {
+  const lvl = {
+    width: Number(raw.width) || 800,
+    height: Number(raw.height) || 450,
+    playerStart: {
+      x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
+      y: (raw.playerStart && Number(raw.playerStart.y)) || 300
+    },
+    tiles: Array.isArray(raw.tiles) ? raw.tiles
+      .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
+      .map(t => ({ x: t.x, y: t.y, w: t.w, h: t.h, type: t.type }))
+      : []
+  };
+
+  const maxRight = lvl.tiles.reduce((m, t) => Math.max(m, t.x + t.w), 0);
+  const maxBottom = lvl.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+
+  // Trust the declared size only if it's at least as big as the actual
+  // content; otherwise derive it, so a bad/stale height field can never
+  // put the player below the "fell off" threshold at spawn.
+  lvl.width = Math.max(lvl.width, maxRight + 200, canvas.width);
+  lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
+
+  lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 32, lvl.playerStart.x));
+  lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 32, lvl.playerStart.y));
+
+  return lvl;
+}
+
+let currentLevel = sanitizeLevel(DEFAULT_LEVEL);
+
+function levelFloorY(level) {
+  const maxBottom = level.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
+  return Math.max(level.height, maxBottom);
+}
 
 // ---- Player ----
 const player = { x: 60, y: 300, w: 32, h: 32, vx: 0, vy: 0, onGround: false };
@@ -92,129 +141,266 @@ function resetPlayer() {
 }
 
 // ---- Camera ----
-const camera = { x: 0 };
+const camera = { x: 0, y: 0 };
 
 // ---- App state ----
 let state = 'menu'; // 'menu' | 'editor' | 'play'
 
-// ---- Overlay DOM (created once, shown/hidden as needed) ----
-const overlay = document.createElement('div');
-overlay.style.display = 'none';
-overlay.style.maxWidth = '760px';
-overlay.style.margin = '10px auto';
-overlay.style.textAlign = 'center';
+// ============================================================
+// DOM controls (editor panel + hidden file inputs). These are
+// plain elements appended below the canvas — no clipboard API,
+// no <base href> tricks, just things proven to work reliably
+// inside the Apps Script HtmlService sandbox.
+// ============================================================
 
-const overlayLabel = document.createElement('p');
-overlayLabel.style.color = '#cfd3dc';
-overlayLabel.style.fontSize = '13px';
-overlayLabel.style.margin = '4px 0';
+const editorPanel = document.createElement('div');
+editorPanel.style.display = 'none';
+editorPanel.style.flexWrap = 'wrap';
+editorPanel.style.gap = '6px';
+editorPanel.style.alignItems = 'center';
+editorPanel.style.justifyContent = 'center';
+editorPanel.style.maxWidth = '820px';
+editorPanel.style.margin = '8px auto';
+editorPanel.style.padding = '8px';
+editorPanel.style.background = '#12141c';
+editorPanel.style.borderRadius = '6px';
+editorPanel.style.fontFamily = 'sans-serif';
+editorPanel.style.fontSize = '12px';
+editorPanel.style.color = '#cfd3dc';
+document.body.appendChild(editorPanel);
 
-const overlayTextarea = document.createElement('textarea');
-overlayTextarea.style.width = '100%';
-overlayTextarea.style.height = '140px';
-overlayTextarea.style.fontFamily = 'monospace';
-overlayTextarea.style.fontSize = '11px';
-overlayTextarea.style.boxSizing = 'border-box';
-
-const overlayButtons = document.createElement('div');
-overlayButtons.style.marginTop = '6px';
-
-function makeButton(text, onClick) {
+function panelLabel(text) {
+  const s = document.createElement('span');
+  s.textContent = text;
+  return s;
+}
+function panelButton(text, onClick) {
   const b = document.createElement('button');
   b.textContent = text;
-  b.style.margin = '0 6px';
-  b.style.padding = '6px 14px';
+  b.style.padding = '4px 10px';
   b.style.cursor = 'pointer';
   b.addEventListener('click', onClick);
   return b;
 }
-
-overlay.appendChild(overlayLabel);
-overlay.appendChild(overlayTextarea);
-overlay.appendChild(overlayButtons);
-document.body.appendChild(overlay);
-
-function hideOverlay() {
-  overlay.style.display = 'none';
-  overlayButtons.innerHTML = '';
+function panelNumberInput(value, width) {
+  const i = document.createElement('input');
+  i.type = 'number';
+  i.value = value;
+  i.min = 1;
+  i.style.width = width || '55px';
+  return i;
 }
 
-function showExportOverlay(levelData) {
-  overlayLabel.textContent = 'Your level as JSON — copy this and save it as a .json file:';
-  overlayTextarea.readOnly = true;
-  overlayTextarea.value = JSON.stringify(levelData, null, 2);
-  overlayButtons.innerHTML = '';
-  overlayButtons.appendChild(makeButton('Copy', () => {
-    overlayTextarea.select();
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(overlayTextarea.value).catch(() => {});
-    }
-    overlayLabel.textContent = "Copied (or press Ctrl+C / Cmd+C if it didn't work automatically):";
-  }));
-  overlayButtons.appendChild(makeButton('Close', hideOverlay));
-  overlay.style.display = 'block';
+// --- Row 1: named level library (localStorage) ---
+const LIBRARY_KEY = 'platformer_levels_v1';
+function loadLibrary() {
+  try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '{}'); }
+  catch (e) { console.warn('Level library unavailable:', e); return {}; }
+}
+function saveLibrary(lib) {
+  try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib)); }
+  catch (e) { console.warn('Could not save level library:', e); }
 }
 
-function showImportOverlay() {
-  overlayLabel.textContent = 'Paste level JSON here:';
-  overlayTextarea.readOnly = false;
-  overlayTextarea.value = '';
-  overlayButtons.innerHTML = '';
-  overlayButtons.appendChild(makeButton('Load', () => {
+const levelSelect = document.createElement('select');
+const NEW_LEVEL_OPTION = '-- unsaved / new --';
+function refreshLevelSelect(selectName) {
+  const lib = loadLibrary();
+  levelSelect.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = NEW_LEVEL_OPTION;
+  levelSelect.appendChild(placeholder);
+  Object.keys(lib).sort().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    levelSelect.appendChild(opt);
+  });
+  levelSelect.value = selectName || '';
+}
+refreshLevelSelect();
+
+const levelNameInput = document.createElement('input');
+levelNameInput.type = 'text';
+levelNameInput.placeholder = 'level name';
+levelNameInput.style.width = '110px';
+
+levelSelect.addEventListener('change', () => {
+  const name = levelSelect.value;
+  if (!name) return;
+  const lib = loadLibrary();
+  if (lib[name]) {
+    loadLevelIntoEditor(sanitizeLevel(lib[name]));
+    levelNameInput.value = name;
+  }
+});
+
+const row1 = document.createElement('div');
+row1.style.display = 'flex'; row1.style.gap = '6px'; row1.style.alignItems = 'center';
+row1.appendChild(panelLabel('Level:'));
+row1.appendChild(levelSelect);
+row1.appendChild(levelNameInput);
+row1.appendChild(panelButton('Save', () => {
+  const name = levelNameInput.value.trim();
+  if (!name) { alert('Type a level name first.'); return; }
+  const lib = loadLibrary();
+  lib[name] = exportEditorLevel();
+  saveLibrary(lib);
+  refreshLevelSelect(name);
+}));
+row1.appendChild(panelButton('New', () => {
+  editorTiles.clear();
+  editorPlayerStart = { x: 60, y: 300 };
+  editorWidthTiles.value = 20; editorHeightTiles.value = 11;
+  applyEditorSize();
+  camera.x = 0; camera.y = 0;
+  levelNameInput.value = '';
+  refreshLevelSelect('');
+}));
+row1.appendChild(panelButton('Delete', () => {
+  const name = levelSelect.value;
+  if (!name) return;
+  const lib = loadLibrary();
+  delete lib[name];
+  saveLibrary(lib);
+  refreshLevelSelect('');
+}));
+editorPanel.appendChild(row1);
+
+// --- Row 2: resize ---
+let EDITOR_LEVEL_WIDTH = 2400;
+let EDITOR_LEVEL_HEIGHT = 440;
+const editorWidthTiles = panelNumberInput(EDITOR_LEVEL_WIDTH / TILE_SIZE);
+const editorHeightTiles = panelNumberInput(EDITOR_LEVEL_HEIGHT / TILE_SIZE);
+
+function applyEditorSize() {
+  const w = Math.max(20, parseInt(editorWidthTiles.value, 10) || 20);
+  const h = Math.max(10, parseInt(editorHeightTiles.value, 10) || 10);
+  EDITOR_LEVEL_WIDTH = w * TILE_SIZE;
+  EDITOR_LEVEL_HEIGHT = h * TILE_SIZE;
+  camera.x = Math.max(0, Math.min(EDITOR_LEVEL_WIDTH - canvas.width, camera.x));
+  camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - (canvas.height - 40)), camera.y));
+}
+
+const row2 = document.createElement('div');
+row2.style.display = 'flex'; row2.style.gap = '6px'; row2.style.alignItems = 'center';
+row2.appendChild(panelLabel('Width (tiles):'));
+row2.appendChild(editorWidthTiles);
+row2.appendChild(panelLabel('Height (tiles):'));
+row2.appendChild(editorHeightTiles);
+row2.appendChild(panelButton('Resize', applyEditorSize));
+editorPanel.appendChild(row2);
+
+// --- Row 3: file download/upload ---
+const uploadInput = document.createElement('input');
+uploadInput.type = 'file';
+uploadInput.accept = 'application/json,.json';
+uploadInput.style.display = 'none';
+document.body.appendChild(uploadInput);
+
+function downloadJSON(levelData, filename) {
+  const blob = new Blob([JSON.stringify(levelData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function readJSONFile(file, onLoaded) {
+  const reader = new FileReader();
+  reader.onload = () => {
     try {
-      const parsed = JSON.parse(overlayTextarea.value);
-      if (!parsed.tiles || !Array.isArray(parsed.tiles) || !parsed.playerStart) {
-        throw new Error('Missing tiles[] or playerStart');
-      }
-      currentLevel = parsed;
-      resetPlayer();
-      camera.x = 0;
-      hideOverlay();
-      state = 'play';
+      const parsed = JSON.parse(reader.result);
+      onLoaded(sanitizeLevel(parsed));
     } catch (err) {
-      overlayLabel.textContent = 'Invalid JSON: ' + err.message;
+      alert('That file is not valid level JSON: ' + err.message);
     }
-  }));
-  overlayButtons.appendChild(makeButton('Cancel', () => { hideOverlay(); }));
-  overlay.style.display = 'block';
+  };
+  reader.onerror = () => alert('Could not read that file.');
+  reader.readAsText(file);
 }
 
-// ---- Menu button geometry (mirrors the mockup layout) ----
+const row3 = document.createElement('div');
+row3.style.display = 'flex'; row3.style.gap = '6px'; row3.style.alignItems = 'center';
+row3.appendChild(panelButton('Download JSON', () => {
+  const name = (levelNameInput.value.trim() || 'level') + '.json';
+  downloadJSON(exportEditorLevel(), name);
+}));
+row3.appendChild(panelButton('Upload JSON into editor', () => uploadInput.click()));
+editorPanel.appendChild(row3);
+
+uploadInput.addEventListener('change', () => {
+  const file = uploadInput.files[0];
+  if (!file) return;
+  readJSONFile(file, sanitized => {
+    loadLevelIntoEditor(sanitized);
+    levelNameInput.value = file.name.replace(/\.json$/i, '');
+    refreshLevelSelect('');
+  });
+  uploadInput.value = '';
+});
+
+// --- Main menu's Import: a separate hidden file input, loads straight into play ---
+const menuImportInput = document.createElement('input');
+menuImportInput.type = 'file';
+menuImportInput.accept = 'application/json,.json';
+menuImportInput.style.display = 'none';
+document.body.appendChild(menuImportInput);
+menuImportInput.addEventListener('change', () => {
+  const file = menuImportInput.files[0];
+  if (!file) return;
+  readJSONFile(file, sanitized => {
+    currentLevel = sanitized;
+    resetPlayer();
+    camera.x = 0; camera.y = 0;
+    state = 'play';
+  });
+  menuImportInput.value = '';
+});
+
+// ---- Menu button geometry ----
 const menuButtons = [
   { id: 'create', label: 'Create', x: 100, y: 160, w: 220, h: 140 },
   { id: 'import', label: 'Import', x: 460, y: 160, w: 220, h: 140 }
 ];
 
-// ---- Editor state ----
+// ---- Editor working state ----
 const editorTiles = new Map(); // "gx,gy" -> type
-let editorTool = 'ground';     // one of TILE_TYPES, or 'start', or 'erase'
+let editorTool = 'ground';
 let editorPlayerStart = { x: 60, y: 300 };
-const EDITOR_LEVEL_WIDTH = 2400;
-const EDITOR_LEVEL_HEIGHT = 450;
+let isPainting = false;
 
 const editorToolbar = (() => {
-  const defs = [...TILE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
+  const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
                 { id: 'start', label: 'Spawn' },
                 { id: 'erase', label: 'Erase' }];
   let x = 10;
   const buttons = defs.map(d => {
-    const btn = { ...d, x, y: 5, w: 90, h: 28 };
-    x += 96;
+    const btn = { ...d, x, y: 5, w: 80, h: 28 };
+    x += 86;
     return btn;
   });
-  buttons.push({ id: 'export', label: 'Export', x: canvas.width - 190, y: 5, w: 85, h: 28 });
-  buttons.push({ id: 'menu', label: 'Menu', x: canvas.width - 95, y: 5, w: 85, h: 28 });
+  buttons.push({ id: 'menu', label: 'Menu', x: canvas.width - 90, y: 5, w: 80, h: 28 });
   return buttons;
 })();
 
-function loadCurrentLevelIntoEditor() {
+function loadLevelIntoEditor(lvl) {
   editorTiles.clear();
-  for (const t of currentLevel.tiles) {
+  for (const t of lvl.tiles) {
     if (t.w === TILE_SIZE && t.h === TILE_SIZE) {
       editorTiles.set(`${Math.round(t.x / TILE_SIZE)},${Math.round(t.y / TILE_SIZE)}`, t.type);
     }
   }
-  editorPlayerStart = { x: currentLevel.playerStart.x, y: currentLevel.playerStart.y };
+  editorPlayerStart = { x: lvl.playerStart.x, y: lvl.playerStart.y };
+  EDITOR_LEVEL_WIDTH = lvl.width;
+  EDITOR_LEVEL_HEIGHT = lvl.height;
+  editorWidthTiles.value = Math.round(EDITOR_LEVEL_WIDTH / TILE_SIZE);
+  editorHeightTiles.value = Math.round(EDITOR_LEVEL_HEIGHT / TILE_SIZE);
+  camera.x = 0; camera.y = 0;
 }
 
 function exportEditorLevel() {
@@ -223,49 +409,61 @@ function exportEditorLevel() {
     const [gx, gy] = key.split(',').map(Number);
     tiles.push({ x: gx * TILE_SIZE, y: gy * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, type });
   }
-  return {
+  return sanitizeLevel({
     width: EDITOR_LEVEL_WIDTH,
     height: EDITOR_LEVEL_HEIGHT,
     playerStart: editorPlayerStart,
     tiles
-  };
+  });
 }
 
-// ---- Input ----
+// ---- Input: keyboard ----
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Escape' && (state === 'editor' || state === 'play')) {
-    hideOverlay();
     state = 'menu';
   }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 function isDown(...codes) { return codes.some(c => keys[c]); }
 
+// ---- Input: mouse / drag-painting ----
 function getCanvasPos(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
   return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
 }
-
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
-canvas.addEventListener('click', e => {
+function paintAt(pos) {
+  if (pos.y < 40) return; // toolbar strip
+  const worldX = pos.x + camera.x;
+  const worldY = pos.y + camera.y;
+  const gx = Math.floor(worldX / TILE_SIZE);
+  const gy = Math.floor(worldY / TILE_SIZE);
+  const key = `${gx},${gy}`;
+  if (editorTool === 'erase') editorTiles.delete(key);
+  else if (editorTool === 'start') editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
+  else editorTiles.set(key, editorTool);
+}
+
+canvas.addEventListener('mousedown', e => {
   const pos = getCanvasPos(e);
 
   if (state === 'menu') {
     for (const b of menuButtons) {
       if (pointInRect(pos.x, pos.y, b)) {
         if (b.id === 'create') {
-          loadCurrentLevelIntoEditor();
-          camera.x = 0;
+          loadLevelIntoEditor(currentLevel);
+          levelNameInput.value = '';
+          refreshLevelSelect('');
           state = 'editor';
         } else if (b.id === 'import') {
-          showImportOverlay();
+          menuImportInput.click();
         }
       }
     }
@@ -273,37 +471,24 @@ canvas.addEventListener('click', e => {
   }
 
   if (state === 'editor') {
-    if (overlay.style.display !== 'none') return;
-
     for (const b of editorToolbar) {
       if (pointInRect(pos.x, pos.y, b)) {
-        if (b.id === 'export') {
-          showExportOverlay(exportEditorLevel());
-        } else if (b.id === 'menu') {
-          state = 'menu';
-        } else {
-          editorTool = b.id;
-        }
+        if (b.id === 'menu') state = 'menu';
+        else editorTool = b.id;
         return;
       }
     }
-
-    if (pos.y < 40) return;
-
-    const worldX = pos.x + camera.x;
-    const gx = Math.floor(worldX / TILE_SIZE);
-    const gy = Math.floor(pos.y / TILE_SIZE);
-    const key = `${gx},${gy}`;
-
-    if (editorTool === 'erase') {
-      editorTiles.delete(key);
-    } else if (editorTool === 'start') {
-      editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
-    } else {
-      editorTiles.set(key, editorTool);
-    }
+    isPainting = true;
+    paintAt(pos);
   }
 });
+
+canvas.addEventListener('mousemove', e => {
+  if (state === 'editor' && isPainting) paintAt(getCanvasPos(e));
+});
+
+window.addEventListener('mouseup', () => { isPainting = false; });
+canvas.addEventListener('mouseleave', () => { /* keep painting: mouseup on window still catches release */ });
 
 // ---- Collision helpers ----
 function rectsOverlap(a, b) {
@@ -313,6 +498,7 @@ function rectsOverlap(a, b) {
 
 function resolveCollisions(axis) {
   for (const t of currentLevel.tiles) {
+    if (HAZARD_TYPES.includes(t.type)) continue; // spikes are never solid
     if (!rectsOverlap(player, t)) continue;
     if (axis === 'y') {
       if (player.vy > 0) {
@@ -327,6 +513,15 @@ function resolveCollisions(axis) {
       if (player.vx > 0) player.x = t.x - player.w;
       else if (player.vx < 0) player.x = t.x + t.w;
       player.vx = 0;
+    }
+  }
+}
+
+function checkHazards() {
+  for (const t of currentLevel.tiles) {
+    if (HAZARD_TYPES.includes(t.type) && rectsOverlap(player, t)) {
+      resetPlayer();
+      return;
     }
   }
 }
@@ -362,30 +557,47 @@ function updatePlay(dt) {
 
   player.x = Math.max(0, Math.min(currentLevel.width - player.w, player.x));
 
-  if (player.y > currentLevel.height + 100) {
+  checkHazards();
+
+  // Fell off the bottom — uses the DERIVED floor, not a possibly-stale
+  // declared height. This is the actual bug fix.
+  if (player.y > levelFloorY(currentLevel) + 150) {
     resetPlayer();
   }
 
-  const halfView = canvas.width / 2;
-  camera.x = Math.max(0, Math.min(currentLevel.width - canvas.width, player.x - halfView));
-  if (currentLevel.width <= canvas.width) camera.x = 0;
+  const viewW = canvas.width, viewH = canvas.height;
+  camera.x = currentLevel.width <= viewW ? 0 :
+    Math.max(0, Math.min(currentLevel.width - viewW, player.x - viewW / 2));
+  camera.y = currentLevel.height <= viewH ? 0 :
+    Math.max(0, Math.min(currentLevel.height - viewH, player.y - viewH / 2));
 }
 
 // ---- Update: editor (camera scroll only) ----
 function updateEditor(dt) {
-  if (overlay.style.display !== 'none') return;
-  if (isDown('ArrowLeft', 'KeyA')) camera.x -= SCROLL_SPEED * dt;
-  if (isDown('ArrowRight', 'KeyD')) camera.x += SCROLL_SPEED * dt;
-  camera.x = Math.max(0, Math.min(EDITOR_LEVEL_WIDTH - canvas.width, camera.x));
+  const viewH = canvas.height - 40;
+  if (isDown('ArrowLeft')) camera.x -= SCROLL_SPEED * dt;
+  if (isDown('ArrowRight')) camera.x += SCROLL_SPEED * dt;
+  if (isDown('ArrowUp')) camera.y -= SCROLL_SPEED * dt;
+  if (isDown('ArrowDown')) camera.y += SCROLL_SPEED * dt;
+  camera.x = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_WIDTH - canvas.width), camera.x));
+  camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - viewH), camera.y));
 }
 
 // ---- Draw helpers ----
-function drawTile(screenX, screenY, w, h, type) {
+function drawTile(sx, sy, w, h, type) {
   if (assets[type]) {
-    ctx.drawImage(assets[type], screenX, screenY, w, h);
+    ctx.drawImage(assets[type], sx, sy, w, h);
+  } else if (type === 'spike') {
+    ctx.fillStyle = TILE_FALLBACK_COLORS.spike;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + h);
+    ctx.lineTo(sx + w / 2, sy);
+    ctx.lineTo(sx + w, sy + h);
+    ctx.closePath();
+    ctx.fill();
   } else {
     ctx.fillStyle = TILE_FALLBACK_COLORS[type] || '#555';
-    ctx.fillRect(screenX, screenY, w, h);
+    ctx.fillRect(sx, sy, w, h);
   }
 }
 
@@ -395,7 +607,7 @@ function drawButton(b, active) {
   ctx.strokeStyle = '#cfd3dc';
   ctx.strokeRect(b.x, b.y, b.w, b.h);
   ctx.fillStyle = '#f0f2f5';
-  ctx.font = '13px sans-serif';
+  ctx.font = '12px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
@@ -433,29 +645,30 @@ function drawEditor() {
     const sx = gx * TILE_SIZE - camera.x;
     ctx.beginPath(); ctx.moveTo(sx, 40); ctx.lineTo(sx, canvas.height); ctx.stroke();
   }
-  for (let gy = 1; gy * TILE_SIZE < canvas.height; gy++) {
-    const sy = gy * TILE_SIZE;
+  const startGY = Math.floor(camera.y / TILE_SIZE);
+  for (let gy = startGY; gy * TILE_SIZE - camera.y < canvas.height; gy++) {
+    const sy = Math.max(40, gy * TILE_SIZE - camera.y);
     ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
   }
 
   for (const [key, type] of editorTiles.entries()) {
     const [gx, gy] = key.split(',').map(Number);
     const sx = gx * TILE_SIZE - camera.x;
-    if (sx + TILE_SIZE < 0 || sx > canvas.width) continue;
-    drawTile(sx, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE, type);
+    const sy = gy * TILE_SIZE - camera.y;
+    if (sx + TILE_SIZE < 0 || sx > canvas.width || sy + TILE_SIZE < 40 || sy > canvas.height) continue;
+    drawTile(sx, sy, TILE_SIZE, TILE_SIZE, type);
   }
 
   const spawnSX = editorPlayerStart.x - camera.x;
+  const spawnSY = editorPlayerStart.y - camera.y;
   ctx.fillStyle = '#f2c744';
   ctx.beginPath();
-  ctx.arc(spawnSX + TILE_SIZE / 2, editorPlayerStart.y + TILE_SIZE / 2, 10, 0, Math.PI * 2);
+  ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 10, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#12141c';
   ctx.fillRect(0, 0, canvas.width, 40);
-  for (const b of editorToolbar) {
-    drawButton(b, b.id === editorTool);
-  }
+  for (const b of editorToolbar) drawButton(b, b.id === editorTool);
 }
 
 function drawPlay() {
@@ -464,26 +677,27 @@ function drawPlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (const t of currentLevel.tiles) {
-    const sx = t.x - camera.x;
-    if (sx + t.w < 0 || sx > canvas.width) continue;
-    drawTile(sx, t.y, t.w, t.h, t.type);
+    const sx = t.x - camera.x, sy = t.y - camera.y;
+    if (sx + t.w < 0 || sx > canvas.width || sy + t.h < 0 || sy > canvas.height) continue;
+    drawTile(sx, sy, t.w, t.h, t.type);
   }
 
-  const psx = player.x - camera.x;
+  const psx = player.x - camera.x, psy = player.y - camera.y;
   if (assets.player) {
-    ctx.drawImage(assets.player, psx, player.y, player.w, player.h);
+    ctx.drawImage(assets.player, psx, psy, player.w, player.h);
   } else {
     ctx.fillStyle = '#e94f37';
-    ctx.fillRect(psx, player.y, player.w, player.h);
+    ctx.fillRect(psx, psy, player.w, player.h);
   }
 }
 
-// ---- Hint text per state ----
-function updateHint() {
+// ---- UI visibility + hint text per state ----
+function updateUI() {
+  editorPanel.style.display = state === 'editor' ? 'flex' : 'none';
   if (state === 'menu') {
-    hint.textContent = 'Click Create to build a level, or Import to load one from JSON';
+    hint.textContent = 'Click Create to build a level, or Import to load a .json file';
   } else if (state === 'editor') {
-    hint.textContent = 'Click a tool, click grid to place/erase • ← → or A/D to scroll • Esc: menu';
+    hint.textContent = 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
   } else if (state === 'play') {
     hint.textContent = 'Move: ← → or A/D • Jump: Space/↑/W • Esc: menu';
   }
@@ -495,7 +709,7 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.033);
   lastTime = now;
 
-  updateHint();
+  updateUI();
 
   if (state === 'play') updatePlay(dt);
   else if (state === 'editor') updateEditor(dt);
