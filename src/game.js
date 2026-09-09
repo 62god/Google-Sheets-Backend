@@ -406,7 +406,7 @@ function exportEditorLevel() {
   });
 }
 
-// ---- Input: keyboard (fixed with preventDefault) ----
+// ---- Input: keyboard ----
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -551,7 +551,7 @@ window.addEventListener('mouseup', () => {
   dragStartGY = null;
 });
 
-// ---- Collision helpers ----
+// ---- Collision helpers (with anti-tunneling fix) ----
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
@@ -562,7 +562,7 @@ function resolveCollisions(axis) {
     if (HAZARD_TYPES.includes(t.type)) continue;
     if (!rectsOverlap(player, t)) continue;
     if (axis === 'y') {
-      if (player.vy > 0) {
+      if (player.vy >= 0) {
         player.y = t.y - player.h;
         player.vy = 0;
         player.onGround = true;
@@ -581,7 +581,6 @@ function resolveCollisions(axis) {
 function checkHazards() {
   for (const t of currentLevel.tiles) {
     if (HAZARD_TYPES.includes(t.type)) {
-      // Shrunk hitbox matching the spike visual triangle
       const hazardHitbox = {
         x: t.x + (t.w * 0.2), 
         y: t.y + (t.h * 0.5), 
@@ -616,7 +615,6 @@ function updatePlay(dt) {
     }
   }
 
-  // Apply gravity with a terminal velocity cap to prevent tunneling
   player.vy = Math.min(player.vy + (GRAVITY * dt), 800);
 
   player.x += player.vx * dt;
@@ -741,6 +739,17 @@ function drawEditor() {
   for (const b of editorToolbar) drawButton(b, b.id === editorTool);
 }
 
+function drawPlayer() {
+  const psx = player.x - camera.x;
+  const psy = player.y - camera.y;
+  if (assets.player) {
+    ctx.drawImage(assets.player, psx, psy, player.w, player.h);
+  } else {
+    ctx.fillStyle = '#e94f37';
+    ctx.fillRect(psx, psy, player.w, player.h);
+  }
+}
+
 function drawPlay() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#87ceeb';
@@ -752,13 +761,7 @@ function drawPlay() {
     drawTile(sx, sy, t.w, t.h, t.type);
   }
 
-  const psx = player.x - camera.x, psy = player.y - camera.y;
-  if (assets.player) {
-    ctx.drawImage(assets.player, psx, psy, player.w, player.h);
-  } else {
-    ctx.fillStyle = '#e94f37';
-    ctx.fillRect(psx, psy, player.w, player.h);
-  }
+  drawPlayer();
 }
 
 // ---- UI visibility + hint text per state ----
