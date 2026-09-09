@@ -41,9 +41,9 @@ const platforms = [
 
 // ---- Asset manifest: paths relative to REPO_BASE ----
 const assetSources = {
-  player:    `${REPO_BASE}/assets/sprites/player.png`,
-  ground:    `${REPO_BASE}/assets/sprites/ground.png`,
-  jumpSound: `${REPO_BASE}/assets/audio/jump.mp3`
+  player:    `${REPO_BASE}/assets/Sprites/player.png`,
+  ground:    `${REPO_BASE}/assets/Sprites/ground.png`,
+  jumpSound: `${REPO_BASE}/assets/Audio/jump.mp3`
 };
 
 const assets = {};
