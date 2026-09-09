@@ -1003,3 +1003,19 @@ function loop(now) {
   lastTime = now;
 
   updateUI();
+
+  if (state === 'play') updatePlay(dt);
+  else if (state === 'editor') updateEditor(dt);
+
+  if (state === 'menu') drawMenu();
+  else if (state === 'editor') drawEditor();
+  else if (state === 'play') drawPlay();
+
+  requestAnimationFrame(loop);
+}
+
+loadAssets(() => {
+  resetPlayer('init');
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+});
