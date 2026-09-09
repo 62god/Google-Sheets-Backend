@@ -45,7 +45,7 @@ const platforms = [
 const assetSources = {
   player:    'assets/Sprites/player.png',
   ground:    'assets/Sprites/ground.png',
-  jumpSound: 'assets/audio/jump.mp3'
+  jumpSound: 'assets/Audio/jump.mp3'
 };
 
 const assets = {};
