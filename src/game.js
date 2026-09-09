@@ -20,9 +20,14 @@ const SCROLL_SPEED = 400; // px/s, editor camera pan
 // ---- Tile categories ----
 const SOLID_TYPES = ['ground', 'rock', 'wood'];
 const HAZARD_TYPES = ['spike'];
-const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES];
+const GOAL_TYPES = ['trophy'];
+const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES, ...GOAL_TYPES];
 const TILE_FALLBACK_COLORS = {
-  ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b', spike: '#c0392b'
+  ground: '#3a5f3a',
+  rock: '#7a7a7a',
+  wood: '#8b5a2b',
+  spike: '#c0392b',
+  trophy: '#f1c40f'
 };
 
 // ---- Asset manifest ----
@@ -32,6 +37,7 @@ const assetSources = {
   rock:      `${REPO_BASE}/assets/Sprites/rock.png`,
   wood:      `${REPO_BASE}/assets/Sprites/wood.png`,
   spike:     `${REPO_BASE}/assets/Sprites/spike.png`,
+  trophy:    `${REPO_BASE}/assets/Sprites/trophy.png`,
   jumpSound: `${REPO_BASE}/assets/audio/jump.mp3`
 };
 const assets = {};
@@ -75,16 +81,29 @@ const DEFAULT_LEVEL = {
 
 // ---- Level sanitation ----
 function sanitizeLevel(raw) {
+  raw = raw && typeof raw === 'object' ? raw : {};
+  const validTypes = new Set(PALETTE_TYPES);
   const lvl = {
     width: Number(raw.width) || 800,
     height: Number(raw.height) || 450,
     playerStart: {
-      x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
-      y: (raw.playerStart && Number(raw.playerStart.y)) || 300
+      x: Number.isFinite(Number(raw.playerStart?.x)) ? Number(raw.playerStart.x) : 60,
+      y: Number.isFinite(Number(raw.playerStart?.y)) ? Number(raw.playerStart.y) : 300
     },
     tiles: Array.isArray(raw.tiles) ? raw.tiles
-      .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
-      .map(t => ({ x: t.x, y: t.y, w: t.w, h: t.h, type: t.type }))
+      .filter(t =>
+        t &&
+        Number.isFinite(Number(t.x)) &&
+        Number.isFinite(Number(t.y)) &&
+        Number(t.w) > 0 &&
+        Number(t.h) > 0 &&
+        validTypes.has(t.type)
+      )
+      .map(t => ({
+        x: Number(t.x), y: Number(t.y),
+        w: Number(t.w), h: Number(t.h),
+        type: t.type
+      }))
       : []
   };
 
@@ -230,6 +249,7 @@ row1.appendChild(panelButton('Save', () => {
   refreshLevelSelect(name);
 }));
 row1.appendChild(panelButton('New', () => {
+  resetPlaylist();
   editorTiles.clear();
   editorPlayerStart = { x: 60, y: 300 };
   editorWidthTiles.value = 20; editorHeightTiles.value = 11;
@@ -312,6 +332,7 @@ row3.appendChild(panelButton('Download JSON', () => {
   downloadJSON(exportEditorLevel(), name);
 }));
 row3.appendChild(panelButton('Upload JSON into editor', () => uploadInput.click()));
+row3.appendChild(panelButton('Play ZIP pack', () => menuImportInput.click()));
 editorPanel.appendChild(row3);
 
 uploadInput.addEventListener('change', () => {
@@ -328,18 +349,25 @@ uploadInput.addEventListener('change', () => {
 // --- Main menu's Import ---
 const menuImportInput = document.createElement('input');
 menuImportInput.type = 'file';
-menuImportInput.accept = 'application/json,.json';
+menuImportInput.accept = 'application/json,.json,.zip,application/zip';
 menuImportInput.style.display = 'none';
 document.body.appendChild(menuImportInput);
 menuImportInput.addEventListener('change', () => {
   const file = menuImportInput.files[0];
   if (!file) return;
-  readJSONFile(file, sanitized => {
-    currentLevel = sanitized;
-    resetPlayer('import');
-    camera.x = 0; camera.y = 0;
-    state = 'play';
-  });
+
+  if (/\.zip$/i.test(file.name)) {
+    importZIPPlaylist(file);
+  } else {
+    resetPlaylist();
+    readJSONFile(file, sanitized => {
+      currentLevel = sanitized;
+      resetPlayer('import');
+      camera.x = 0; camera.y = 0;
+      state = 'play';
+    });
+  }
+
   menuImportInput.value = '';
 });
 
@@ -511,7 +539,7 @@ canvas.addEventListener('mousedown', e => {
           else { lastPaintTool = editorTool; editorTool = 'pan'; }
         } else {
           editorTool = b.id;
-          lastPaintTool = b.id;
+          if (b.id !== 'pan') lastPaintTool = b.id;
         }
         return;
       }
@@ -551,52 +579,209 @@ window.addEventListener('mouseup', () => {
   dragStartGY = null;
 });
 
-// ---- Collision helpers (with anti-tunneling fix) ----
+// ---- Collision helpers ----
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
-function resolveCollisions(axis) {
+function resolveHorizontalCollisions(prevX) {
   for (const t of currentLevel.tiles) {
-    if (HAZARD_TYPES.includes(t.type)) continue;
+    if (!SOLID_TYPES.includes(t.type)) continue;
     if (!rectsOverlap(player, t)) continue;
-    if (axis === 'y') {
-      if (player.vy >= 0) {
-        player.y = t.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
-      } else if (player.vy < 0) {
-        player.y = t.y + t.h;
-        player.vy = 0;
-      }
-    } else {
-      if (player.vx > 0) player.x = t.x - player.w;
-      else if (player.vx < 0) player.x = t.x + t.w;
+
+    const prevRight = prevX + player.w;
+    const prevLeft = prevX;
+
+    if (player.vx > 0 && prevRight <= t.x) {
+      player.x = t.x - player.w;
       player.vx = 0;
+    } else if (player.vx < 0 && prevLeft >= t.x + t.w) {
+      player.x = t.x + t.w;
+      player.vx = 0;
+    }
+  }
+}
+
+function resolveVerticalCollisions(prevY) {
+  player.onGround = false;
+
+  for (const t of currentLevel.tiles) {
+    if (!SOLID_TYPES.includes(t.type)) continue;
+    if (!rectsOverlap(player, t)) continue;
+
+    const prevBottom = prevY + player.h;
+    const prevTop = prevY;
+
+    // Falling onto the top of a solid.
+    if (player.vy >= 0 && prevBottom <= t.y) {
+      player.y = t.y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+    // Rising into the bottom of a solid.
+    else if (player.vy < 0 && prevTop >= t.y + t.h) {
+      player.y = t.y + t.h;
+      player.vy = 0;
     }
   }
 }
 
 function checkHazards() {
   for (const t of currentLevel.tiles) {
-    if (HAZARD_TYPES.includes(t.type)) {
-      const hazardHitbox = {
-        x: t.x + (t.w * 0.2), 
-        y: t.y + (t.h * 0.5), 
-        w: t.w * 0.6,
-        h: t.h * 0.5
-      };
-      if (rectsOverlap(player, hazardHitbox)) {
-        resetPlayer('hazard');
-        return;
-      }
+    if (!HAZARD_TYPES.includes(t.type)) continue;
+
+    const hazardHitbox = {
+      x: t.x + t.w * 0.2,
+      y: t.y + t.h * 0.5,
+      w: t.w * 0.6,
+      h: t.h * 0.5
+    };
+
+    if (rectsOverlap(player, hazardHitbox)) {
+      resetPlayer('hazard');
+      return true;
     }
+  }
+  return false;
+}
+
+function checkGoal() {
+  for (const t of currentLevel.tiles) {
+    if (!GOAL_TYPES.includes(t.type)) continue;
+    if (rectsOverlap(player, t)) return true;
+  }
+  return false;
+}
+
+// ---- Playlist / ZIP level support ----
+let levelPlaylist = [];
+let playlistIndex = -1;
+let levelComplete = false;
+let zipLibraryLoaded = false;
+
+function resetPlaylist() {
+  levelPlaylist = [];
+  playlistIndex = -1;
+  levelComplete = false;
+}
+
+function getLevelNumber(filename) {
+  const matches = String(filename).match(/\d+/g);
+  if (!matches || matches.length === 0) return null;
+  return Number(matches[0]);
+}
+
+function sortLevelFiles(files) {
+  return files
+    .filter(file => /\.json$/i.test(file.name))
+    .map(file => ({ file, number: getLevelNumber(file.name) }))
+    .filter(item => item.number !== null)
+    .sort((a, b) => a.number - b.number || a.file.name.localeCompare(b.file.name));
+}
+
+function playPlaylistLevel(index) {
+  if (index < 0 || index >= levelPlaylist.length) {
+    levelComplete = true;
+    state = 'menu';
+    hint.textContent = '🏆 All levels complete!';
+    return;
+  }
+
+  playlistIndex = index;
+  currentLevel = sanitizeLevel(levelPlaylist[index].level);
+  resetPlayer('playlist-level');
+  camera.x = 0;
+  camera.y = 0;
+  levelComplete = false;
+  state = 'play';
+}
+
+function finishCurrentLevel() {
+  if (levelComplete) return;
+  levelComplete = true;
+
+  if (levelPlaylist.length > 0 && playlistIndex >= 0) {
+    setTimeout(() => playPlaylistLevel(playlistIndex + 1), 500);
+  } else {
+    state = 'menu';
+    hint.textContent = '🏆 Level complete! Press Create or Import to play again.';
+  }
+}
+
+async function ensureJSZip() {
+  if (window.JSZip) return window.JSZip;
+  if (zipLibraryLoaded) {
+    throw new Error('ZIP library failed to load.');
+  }
+
+  zipLibraryLoaded = true;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Could not load ZIP support.'));
+    document.head.appendChild(script);
+  });
+
+  return window.JSZip;
+}
+
+async function readZIPLevels(file) {
+  const JSZip = await ensureJSZip();
+  const zip = await JSZip.loadAsync(file);
+  const candidates = [];
+
+  for (const name of Object.keys(zip.files)) {
+    const entry = zip.files[name];
+    if (entry.dir || !/\.json$/i.test(name)) continue;
+
+    const baseName = name.split('/').pop();
+    const number = getLevelNumber(baseName);
+    if (number === null) continue;
+
+    try {
+      const text = await entry.async('text');
+      const parsed = JSON.parse(text);
+      candidates.push({
+        name: baseName,
+        number,
+        level: sanitizeLevel(parsed)
+      });
+    } catch (err) {
+      console.warn(`Skipping invalid level JSON "${name}":`, err);
+    }
+  }
+
+  candidates.sort((a, b) => a.number - b.number || a.name.localeCompare(b.name));
+
+  if (candidates.length === 0) {
+    throw new Error('No numbered .json level files were found in the ZIP.');
+  }
+
+  return candidates;
+}
+
+async function importZIPPlaylist(file) {
+  try {
+    hint.textContent = 'Loading level pack...';
+    const levels = await readZIPLevels(file);
+
+    levelPlaylist = levels;
+    playlistIndex = 0;
+    levelComplete = false;
+    playPlaylistLevel(0);
+  } catch (err) {
+    console.error(err);
+    alert('Could not import level pack: ' + err.message);
+    updateUI();
   }
 }
 
 // ---- Update: play ----
 function updatePlay(dt) {
+  if (levelComplete) return;
+
   if (isDown('ArrowLeft', 'KeyA')) {
     player.vx = -MOVE_SPEED;
   } else if (isDown('ArrowRight', 'KeyD')) {
@@ -615,22 +800,34 @@ function updatePlay(dt) {
     }
   }
 
-  player.vy = Math.min(player.vy + (GRAVITY * dt), 800);
+  player.vy = Math.min(player.vy + GRAVITY * dt, 800);
 
+  const prevX = player.x;
+  const prevY = player.y;
+
+  // Resolve each axis independently using the previous position.
   player.x += player.vx * dt;
-  resolveCollisions('x');
-
-  player.onGround = false;
+  resolveHorizontalCollisions(prevX);
 
   player.y += player.vy * dt;
-  resolveCollisions('y');
+  resolveVerticalCollisions(prevY);
 
+  // Keep the player inside the horizontal level bounds.
   player.x = Math.max(0, Math.min(currentLevel.width - player.w, player.x));
 
-  checkHazards();
+  if (checkHazards()) return;
 
-  if (player.y > levelFloorY(currentLevel) + 150) {
+  if (checkGoal()) {
+    finishCurrentLevel();
+    return;
+  }
+
+  // This is intentionally based on the actual level bottom, not a tile's
+  // arbitrary lowest point. It prevents normal jumps from causing resets.
+  const deathY = Math.max(currentLevel.height, levelFloorY(currentLevel)) + 150;
+  if (player.y > deathY) {
     resetPlayer('fell-off');
+    return;
   }
 
   const viewW = canvas.width, viewH = canvas.height;
@@ -663,6 +860,15 @@ function drawTile(sx, sy, w, h, type) {
     ctx.lineTo(sx + w, sy + h);
     ctx.closePath();
     ctx.fill();
+  } else if (type === 'trophy') {
+    ctx.fillStyle = TILE_FALLBACK_COLORS.trophy;
+    ctx.fillRect(sx, sy, w, h);
+
+    // Simple visual trophy fallback.
+    ctx.fillStyle = '#8a6500';
+    ctx.fillRect(sx + w * 0.3, sy + h * 0.68, w * 0.4, h * 0.12);
+    ctx.fillRect(sx + w * 0.42, sy + h * 0.78, w * 0.16, h * 0.10);
+    ctx.fillRect(sx + w * 0.28, sy + h * 0.88, w * 0.44, h * 0.08);
   } else {
     ctx.fillStyle = TILE_FALLBACK_COLORS[type] || '#555';
     ctx.fillRect(sx, sy, w, h);
@@ -775,8 +981,10 @@ function updateUI() {
       ? 'Pan mode: drag to scroll the view • Click ✋ Pan again to resume editing • Esc: menu'
       : 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
     canvas.style.cursor = editorTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'crosshair';
-  } else if (state === 'play') {
-    hint.textContent = 'Move: ← → or A/D • Jump: Space/↑/W • Esc: menu';
+    } else if (state === 'play') {
+    hint.textContent = levelPlaylist.length > 0
+      ? `Level ${playlistIndex + 1}/${levelPlaylist.length} • Reach the trophy • Move: ← → / A/D • Jump: Space/W`
+      : 'Move: ← → or A/D • Jump: Space/↑/W • Reach the trophy • Esc: menu';
     canvas.style.cursor = 'default';
   }
 }
