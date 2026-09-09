@@ -134,7 +134,15 @@ function levelFloorY(level) {
 
 // ---- Player ----
 const player = { x: 60, y: 300, w: 32, h: 32, vx: 0, vy: 0, onGround: false };
-function resetPlayer() {
+function resetPlayer(reason) {
+  // DEBUG: logs why/where a reset happened. If the jump-reset bug shows
+  // up again, open the browser console right when it happens and send
+  // back the exact line it prints — that tells us definitively which
+  // branch is firing instead of guessing.
+  console.log(
+    `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
+    `floorY=${levelFloorY(currentLevel).toFixed(1)} onGround=${player.onGround}`
+  );
   player.x = currentLevel.playerStart.x;
   player.y = currentLevel.playerStart.y;
   player.vx = 0; player.vy = 0; player.onGround = false;
@@ -355,7 +363,7 @@ menuImportInput.addEventListener('change', () => {
   if (!file) return;
   readJSONFile(file, sanitized => {
     currentLevel = sanitized;
-    resetPlayer();
+    resetPlayer('import');
     camera.x = 0; camera.y = 0;
     state = 'play';
   });
@@ -373,6 +381,9 @@ const editorTiles = new Map(); // "gx,gy" -> type
 let editorTool = 'ground';
 let editorPlayerStart = { x: 60, y: 300 };
 let isPainting = false;
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+let panStartCamera = { x: 0, y: 0 };
 
 const editorToolbar = (() => {
   const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
@@ -384,9 +395,12 @@ const editorToolbar = (() => {
     x += 86;
     return btn;
   });
+  // Pan (hand) tool sits immediately left of Menu, as requested.
+  buttons.push({ id: 'pan', label: '✋ Pan', x: canvas.width - 180, y: 5, w: 80, h: 28 });
   buttons.push({ id: 'menu', label: 'Menu', x: canvas.width - 90, y: 5, w: 80, h: 28 });
   return buttons;
 })();
+let lastPaintTool = 'ground'; // remembered so toggling Pan off restores it
 
 function loadLevelIntoEditor(lvl) {
   editorTiles.clear();
@@ -473,22 +487,46 @@ canvas.addEventListener('mousedown', e => {
   if (state === 'editor') {
     for (const b of editorToolbar) {
       if (pointInRect(pos.x, pos.y, b)) {
-        if (b.id === 'menu') state = 'menu';
-        else editorTool = b.id;
+        if (b.id === 'menu') {
+          state = 'menu';
+        } else if (b.id === 'pan') {
+          // Toggle: Pan -> back to whatever tool was active before Pan.
+          if (editorTool === 'pan') editorTool = lastPaintTool;
+          else { lastPaintTool = editorTool; editorTool = 'pan'; }
+        } else {
+          editorTool = b.id;
+          lastPaintTool = b.id;
+        }
         return;
       }
     }
-    isPainting = true;
-    paintAt(pos);
+
+    if (editorTool === 'pan') {
+      isPanning = true;
+      panStart = pos;
+      panStartCamera = { x: camera.x, y: camera.y };
+    } else {
+      isPainting = true;
+      paintAt(pos);
+    }
   }
 });
 
 canvas.addEventListener('mousemove', e => {
-  if (state === 'editor' && isPainting) paintAt(getCanvasPos(e));
+  if (state !== 'editor') return;
+  const pos = getCanvasPos(e);
+  if (isPanning) {
+    const viewH = canvas.height - 40;
+    camera.x = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_WIDTH - canvas.width),
+      panStartCamera.x - (pos.x - panStart.x)));
+    camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - viewH),
+      panStartCamera.y - (pos.y - panStart.y)));
+  } else if (isPainting) {
+    paintAt(pos);
+  }
 });
 
-window.addEventListener('mouseup', () => { isPainting = false; });
-canvas.addEventListener('mouseleave', () => { /* keep painting: mouseup on window still catches release */ });
+window.addEventListener('mouseup', () => { isPainting = false; isPanning = false; });
 
 // ---- Collision helpers ----
 function rectsOverlap(a, b) {
@@ -520,7 +558,7 @@ function resolveCollisions(axis) {
 function checkHazards() {
   for (const t of currentLevel.tiles) {
     if (HAZARD_TYPES.includes(t.type) && rectsOverlap(player, t)) {
-      resetPlayer();
+      resetPlayer('hazard');
       return;
     }
   }
@@ -562,7 +600,7 @@ function updatePlay(dt) {
   // Fell off the bottom — uses the DERIVED floor, not a possibly-stale
   // declared height. This is the actual bug fix.
   if (player.y > levelFloorY(currentLevel) + 150) {
-    resetPlayer();
+    resetPlayer('fell-off');
   }
 
   const viewW = canvas.width, viewH = canvas.height;
@@ -696,10 +734,15 @@ function updateUI() {
   editorPanel.style.display = state === 'editor' ? 'flex' : 'none';
   if (state === 'menu') {
     hint.textContent = 'Click Create to build a level, or Import to load a .json file';
+    canvas.style.cursor = 'default';
   } else if (state === 'editor') {
-    hint.textContent = 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
+    hint.textContent = editorTool === 'pan'
+      ? 'Pan mode: drag to scroll the view • Click ✋ Pan again to resume editing • Esc: menu'
+      : 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
+    canvas.style.cursor = editorTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'crosshair';
   } else if (state === 'play') {
     hint.textContent = 'Move: ← → or A/D • Jump: Space/↑/W • Esc: menu';
+    canvas.style.cursor = 'default';
   }
 }
 
@@ -722,7 +765,7 @@ function loop(now) {
 }
 
 loadAssets(() => {
-  resetPlayer();
+  resetPlayer('init');
   lastTime = performance.now();
   requestAnimationFrame(loop);
 });
