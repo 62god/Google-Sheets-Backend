@@ -1,6 +1,7 @@
 /**
  * src/game.js — lives on GitHub, fetched at runtime by the Apps Script dialog.
  * REPO_BASE is set as a global by Index.html before this file loads.
+ *fjd;jf;lska
  */
 
 const REPO_BASE = window.REPO_BASE || '';
