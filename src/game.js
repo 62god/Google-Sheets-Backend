@@ -385,6 +385,10 @@ let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let panStartCamera = { x: 0, y: 0 };
 
+// Multi-tile drag tracking variables
+let dragStartGX = null;
+let dragStartGY = null;
+
 const editorToolbar = (() => {
   const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
                 { id: 'start', label: 'Spawn' },
@@ -453,16 +457,56 @@ function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
-function paintAt(pos) {
-  if (pos.y < 40) return; // toolbar strip
+function getGridPos(pos) {
   const worldX = pos.x + camera.x;
   const worldY = pos.y + camera.y;
-  const gx = Math.floor(worldX / TILE_SIZE);
-  const gy = Math.floor(worldY / TILE_SIZE);
+  return {
+    gx: Math.floor(worldX / TILE_SIZE),
+    gy: Math.floor(worldY / TILE_SIZE)
+  };
+}
+
+function applyBrush(gx, gy) {
   const key = `${gx},${gy}`;
   if (editorTool === 'erase') editorTiles.delete(key);
   else if (editorTool === 'start') editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
   else editorTiles.set(key, editorTool);
+}
+
+function paintAt(pos) {
+  if (pos.y < 40) return; // toolbar strip
+  const { gx, gy } = getGridPos(pos);
+  
+  if (dragStartGX === null || dragStartGY === null) {
+    dragStartGX = gx;
+    dragStartGY = gy;
+    applyBrush(gx, gy);
+  } else {
+    // Multi-tile drag painting (Bresenham's line algorithm for smooth continuous placement)
+    let x0 = dragStartGX, y0 = dragStartGY;
+    const x1 = gx, y1 = gy;
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+
+    while (true) {
+      applyBrush(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) {
+        err -= dy;
+        x0 += sx;
+      }
+      if (e2 < dx) {
+        err += dx;
+        y0 += sy;
+      }
+    }
+    dragStartGX = gx;
+    dragStartGY = gy;
+  }
 }
 
 canvas.addEventListener('mousedown', e => {
@@ -507,6 +551,8 @@ canvas.addEventListener('mousedown', e => {
       panStartCamera = { x: camera.x, y: camera.y };
     } else {
       isPainting = true;
+      dragStartGX = null;
+      dragStartGY = null;
       paintAt(pos);
     }
   }
@@ -526,7 +572,12 @@ canvas.addEventListener('mousemove', e => {
   }
 });
 
-window.addEventListener('mouseup', () => { isPainting = false; isPanning = false; });
+window.addEventListener('mouseup', () => { 
+  isPainting = false; 
+  isPanning = false; 
+  dragStartGX = null;
+  dragStartGY = null;
+});
 
 // ---- Collision helpers ----
 function rectsOverlap(a, b) {
