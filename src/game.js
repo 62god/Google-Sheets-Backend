@@ -3,8 +3,8 @@
  * REPO_BASE is set as a global by Index.html before this file loads.
  *
  * Expected asset locations in this repo (adjust paths below if yours differ):
- *   /assets/sprites/player.png
- *   /assets/sprites/ground.png
+ *   /assets/Sprites/player.png
+ *   /assets/Sprites/ground.png
  *   /assets/audio/jump.mp3
  *
  * If an asset is missing, the game falls back to solid-color rectangles /
