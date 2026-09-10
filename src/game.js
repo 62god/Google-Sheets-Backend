@@ -73,14 +73,15 @@ function initPlatformerGame() {
 
   function startMusic() {
     if (assets.music && assets.music.paused) {
+      assets.music.volume = gameSettings.musicVolume;
       assets.music.play().catch(() => {});
     }
   }
 
-  // ---- Settings State ----
+  // ---- Settings State with Sliders ----
   const gameSettings = {
-    musicEnabled: true,
-    sfxEnabled: true
+    musicVolume: 0.9,
+    sfxVolume: 1.0
   };
 
   // ---- Default level ----
@@ -149,8 +150,9 @@ function initPlatformerGame() {
   // ---- Player ----
   const player = { x: 60, y: 260, w: TILE_SIZE, h: TILE_SIZE, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
-    if (reason === 'hazard' && assets.deathSound && gameSettings.sfxEnabled) {
+    if (reason === 'hazard' && assets.deathSound && gameSettings.sfxVolume > 0) {
       assets.deathSound.currentTime = 0;
+      assets.deathSound.volume = gameSettings.sfxVolume;
       assets.deathSound.play().catch(() => {});
     }
     player.x = currentLevel.playerStart.x;
@@ -163,6 +165,7 @@ function initPlatformerGame() {
 
   // ---- App state ----
   let state = 'menu'; // 'menu' | 'editor' | 'play' | 'levelSelect' | 'settings'
+  let isDraggingSlider = null; // 'music' | 'sfx'
 
   // ---- Preset Levels State ----
   let presetLevels = [];
@@ -478,7 +481,7 @@ function initPlatformerGame() {
     menuImportInput.value = '';
   });
 
-  // ---- Menu button geometry (Updated to include Settings) ----
+  // ---- Menu button geometry ----
   const menuButtons = [
     { id: 'create',   label: 'Create',         x: 250, y: 80,  w: 300, h: 50 },
     { id: 'import',   label: 'Import Pack/JSON', x: 250, y: 140, w: 300, h: 50 },
@@ -619,6 +622,22 @@ function initPlatformerGame() {
     }
   }
 
+  function handleSliderDrag(pos) {
+    const trackX = canvas.width / 2 - 120;
+    const trackW = 240;
+
+    if (isDraggingSlider === 'music') {
+      const musicBarX = trackX;
+      const val = Math.max(0, Math.min(1, (pos.x - musicBarX) / trackW));
+      gameSettings.musicVolume = val;
+      if (assets.music) assets.music.volume = val;
+    } else if (isDraggingSlider === 'sfx') {
+      const sfxBarX = trackX;
+      const val = Math.max(0, Math.min(1, (pos.x - sfxBarX) / trackW));
+      gameSettings.sfxVolume = val;
+    }
+  }
+
   canvas.addEventListener('mousedown', e => {
     const pos = getCanvasPos(e);
 
@@ -644,17 +663,18 @@ function initPlatformerGame() {
     }
 
     if (state === 'settings') {
-      const musicBtn = { x: canvas.width / 2 - 100, y: 140, w: 200, h: 40 };
-      const sfxBtn = { x: canvas.width / 2 - 100, y: 200, w: 200, h: 40 };
+      const trackX = canvas.width / 2 - 120;
+      const trackW = 240;
+      const musicBar = { x: trackX, y: 130, w: trackW, h: 30 };
+      const sfxBar = { x: trackX, y: 220, w: trackW, h: 30 };
       const backBtn = { x: canvas.width / 2 - 100, y: 320, w: 200, h: 40 };
 
-      if (pointInRect(pos.x, pos.y, musicBtn)) {
-        gameSettings.musicEnabled = !gameSettings.musicEnabled;
-        if (assets.music) {
-          assets.music.muted = !gameSettings.musicEnabled;
-        }
-      } else if (pointInRect(pos.x, pos.y, sfxBtn)) {
-        gameSettings.sfxEnabled = !gameSettings.sfxEnabled;
+      if (pointInRect(pos.x, pos.y, musicBar)) {
+        isDraggingSlider = 'music';
+        handleSliderDrag(pos);
+      } else if (pointInRect(pos.x, pos.y, sfxBar)) {
+        isDraggingSlider = 'sfx';
+        handleSliderDrag(pos);
       } else if (pointInRect(pos.x, pos.y, backBtn)) {
         state = 'menu';
       }
@@ -712,8 +732,12 @@ function initPlatformerGame() {
   });
 
   canvas.addEventListener('mousemove', e => {
-    if (state !== 'editor') return;
     const pos = getCanvasPos(e);
+    if (state === 'settings' && isDraggingSlider) {
+      handleSliderDrag(pos);
+      return;
+    }
+    if (state !== 'editor') return;
     if (isPanning) {
       const viewH = canvas.height - 40;
       camera.x = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_WIDTH - canvas.width),
@@ -728,6 +752,7 @@ function initPlatformerGame() {
   window.addEventListener('mouseup', () => { 
     isPainting = false; 
     isPanning = false; 
+    isDraggingSlider = null;
     dragStartGX = null;
     dragStartGY = null;
   });
@@ -804,8 +829,9 @@ function initPlatformerGame() {
     if (isDown('Space', 'ArrowUp', 'KeyW') && player.onGround) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
-      if (assets.jumpSound && gameSettings.sfxEnabled) {
+      if (assets.jumpSound && gameSettings.sfxVolume > 0) {
         assets.jumpSound.currentTime = 0;
+        assets.jumpSound.volume = gameSettings.sfxVolume;
         assets.jumpSound.play().catch(() => {});
       }
     }
@@ -935,6 +961,31 @@ function initPlatformerGame() {
     ctx.lineWidth = 1;
   }
 
+  function drawSlider(label, value, x, y, w, h) {
+    // Label
+    ctx.fillStyle = '#f0f2f5';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${label}: ${Math.round(value * 100)}%`, x, y - 6);
+
+    // Track Background
+    ctx.fillStyle = '#2c2f3a';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#cfd3dc';
+    ctx.strokeRect(x, y, w, h);
+
+    // Filled Track Amount
+    ctx.fillStyle = '#4a6fa5';
+    ctx.fillRect(x, y, w * value, h);
+
+    // Thumb handle
+    const thumbX = x + (w * value);
+    ctx.fillStyle = '#f0f2f5';
+    ctx.fillRect(thumbX - 6, y - 4, 12, h + 8);
+    ctx.strokeRect(thumbX - 6, y - 4, 12, h + 8);
+  }
+
   function drawSettings() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#1b1f2a';
@@ -943,34 +994,28 @@ function initPlatformerGame() {
     ctx.fillStyle = '#f0f2f5';
     ctx.font = '24px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Settings', canvas.width / 2, 60);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('Settings', canvas.width / 2, 50);
 
-    const musicBtn = { x: canvas.width / 2 - 100, y: 140, w: 200, h: 40 };
-    const sfxBtn = { x: canvas.width / 2 - 100, y: 200, w: 200, h: 40 };
+    const trackX = canvas.width / 2 - 120;
+    const trackW = 240;
+
+    // Draw Music Volume Slider
+    drawSlider('Music Volume', gameSettings.musicVolume, trackX, 130, trackW, 20);
+
+    // Draw SFX Volume Slider
+    drawSlider('SFX Volume', gameSettings.sfxVolume, trackX, 220, trackW, 20);
+
+    // Draw Back Button
     const backBtn = { x: canvas.width / 2 - 100, y: 320, w: 200, h: 40 };
-
-    // Music Button
-    ctx.fillStyle = gameSettings.musicEnabled ? '#27ae60' : '#c0392b';
-    ctx.fillRect(musicBtn.x, musicBtn.y, musicBtn.w, musicBtn.h);
-    ctx.strokeStyle = '#cfd3dc';
-    ctx.strokeRect(musicBtn.x, musicBtn.y, musicBtn.w, musicBtn.h);
-    ctx.fillStyle = '#f0f2f5';
-    ctx.font = '16px sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`Music: ${gameSettings.musicEnabled ? 'ON' : 'OFF'}`, musicBtn.x + musicBtn.w / 2, musicBtn.y + musicBtn.h / 2);
-
-    // SFX Button
-    ctx.fillStyle = gameSettings.sfxEnabled ? '#27ae60' : '#c0392b';
-    ctx.fillRect(sfxBtn.x, sfxBtn.y, sfxBtn.w, sfxBtn.h);
-    ctx.strokeRect(sfxBtn.x, sfxBtn.y, sfxBtn.w, sfxBtn.h);
-    ctx.fillStyle = '#f0f2f5';
-    ctx.fillText(`SFX: ${gameSettings.sfxEnabled ? 'ON' : 'OFF'}`, sfxBtn.x + sfxBtn.w / 2, sfxBtn.y + sfxBtn.h / 2);
-
-    // Back Button
     ctx.fillStyle = '#2c2f3a';
     ctx.fillRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
+    ctx.strokeStyle = '#cfd3dc';
     ctx.strokeRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
     ctx.fillStyle = '#f0f2f5';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText('Back to Menu', backBtn.x + backBtn.w / 2, backBtn.y + backBtn.h / 2);
   }
 
