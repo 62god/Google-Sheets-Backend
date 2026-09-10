@@ -117,8 +117,8 @@ function initPlatformerGame() {
       lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
     }
 
-    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 48, lvl.playerStart.x));
-    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 64, lvl.playerStart.y));
+    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - TILE_SIZE, lvl.playerStart.x));
+    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - TILE_SIZE, lvl.playerStart.y));
 
     return lvl;
   }
@@ -146,8 +146,8 @@ function initPlatformerGame() {
     return Math.max(level.height, maxBottom);
   }
 
-  // ---- Player (Bigger size: 48x64 px, crisp 16x16 style scaled up) ----
-  const player = { x: 60, y: 260, w: 48, h: 64, vx: 0, vy: 0, onGround: false };
+  // ---- Player (Matched to ground tile size: 32x32 px) ----
+  const player = { x: 60, y: 260, w: TILE_SIZE, h: TILE_SIZE, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
     if (reason === 'hazard' && assets.deathSound) {
       assets.deathSound.currentTime = 0;
@@ -1033,24 +1033,24 @@ function initPlatformerGame() {
     if (assets.player) {
       ctx.drawImage(assets.player, psx, psy, player.w, player.h);
     } else {
-      // Detailed pixel player fallback (48x64 px crisp rendering)
+      // 32x32 crisp pixel player fallback (matching tile size)
       // Body (red tunic)
       ctx.fillStyle = '#e94f37';
-      ctx.fillRect(psx + 8, psy + 20, 32, 32);
+      ctx.fillRect(psx + 6, psy + 10, 20, 16);
       // Head / Face
       ctx.fillStyle = '#f5c6a5';
-      ctx.fillRect(psx + 12, psy + 4, 24, 20);
+      ctx.fillRect(psx + 8, psy + 2, 16, 10);
       // Hat/Hair
       ctx.fillStyle = '#c0392b';
-      ctx.fillRect(psx + 10, psy, 28, 8);
+      ctx.fillRect(psx + 6, psy, 20, 4);
       // Eyes
       ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(psx + 18, psy + 10, 4, 4);
-      ctx.fillRect(psx + 28, psy + 10, 4, 4);
+      ctx.fillRect(psx + 11, psy + 5, 2, 2);
+      ctx.fillRect(psx + 19, psy + 5, 2, 2);
       // Boots
       ctx.fillStyle = '#34495e';
-      ctx.fillRect(psx + 8, psy + 52, 12, 12);
-      ctx.fillRect(psx + 28, psy + 52, 12, 12);
+      ctx.fillRect(psx + 7, psy + 26, 6, 6);
+      ctx.fillRect(psx + 19, psy + 26, 6, 6);
     }
     ctx.restore();
   }
