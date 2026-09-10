@@ -911,13 +911,13 @@ function initPlatformerGame() {
         const rot = (Number(t.rotation) || 0) % 360;
         let hazardHitbox;
         if (rot === 90) {
-          hazardHitbox = { x: t.x, y: t.y + (t.h * 0.2), w: t.w * 0.5, h: t.h * 0.6 };
+          hazardHitbox = { x: t.x, y: t.y, w: t.w * 0.5, h: t.h };
         } else if (rot === 180) {
-          hazardHitbox = { x: t.x + (t.w * 0.2), y: t.y, w: t.w * 0.6, h: t.h * 0.5 };
+          hazardHitbox = { x: t.x, y: t.y, w: t.w, h: t.h * 0.5 };
         } else if (rot === 270) {
-          hazardHitbox = { x: t.x + (t.w * 0.5), y: t.y + (t.h * 0.2), w: t.w * 0.5, h: t.h * 0.6 };
+          hazardHitbox = { x: t.x + (t.w * 0.5), y: t.y, w: t.w * 0.5, h: t.h };
         } else {
-          hazardHitbox = { x: t.x + (t.w * 0.2), y: t.y + (t.h * 0.5), w: t.w * 0.6, h: t.h * 0.5 };
+          hazardHitbox = { x: t.x, y: t.y + (t.h * 0.5), w: t.w, h: t.h * 0.5 };
         }
 
         if (rectsOverlap(player, hazardHitbox)) {
