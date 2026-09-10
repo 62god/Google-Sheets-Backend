@@ -117,7 +117,7 @@ function initPlatformerGame() {
           w: t.w,
           h: t.h,
           type: t.type,
-          rotation: Number(t.rotation) || 0
+          rotation: (Number(t.rotation) || 0) % 360
         }))
         : []
     };
@@ -514,7 +514,7 @@ function initPlatformerGame() {
   const editorTiles = new Map();
   let editorTool = 'blocks';
   let selectedBlockType = 'ground';
-  let editorRotation = 0; // 0, 90, 180, 270
+  let editorRotation = 0; // strictly 0, 90, 180, 270
   let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
   let isPanning = false;
@@ -598,7 +598,7 @@ function initPlatformerGame() {
   function getTileData(t) {
     if (!t) return { type: 'ground', rotation: 0 };
     if (typeof t === 'string') return { type: t, rotation: 0 };
-    return { type: t.type || 'ground', rotation: t.rotation || 0 };
+    return { type: t.type || 'ground', rotation: (Number(t.rotation) || 0) % 360 };
   }
 
   function loadLevelIntoEditor(lvl) {
@@ -607,7 +607,7 @@ function initPlatformerGame() {
       if (t.w === TILE_SIZE && t.h === TILE_SIZE) {
         editorTiles.set(`${Math.round(t.x / TILE_SIZE)},${Math.round(t.y / TILE_SIZE)}`, {
           type: t.type,
-          rotation: t.rotation || 0
+          rotation: (Number(t.rotation) || 0) % 360
         });
       }
     }
@@ -625,7 +625,7 @@ function initPlatformerGame() {
     for (const [key, val] of editorTiles.entries()) {
       const [gx, gy] = key.split(',').map(Number);
       const tData = getTileData(val);
-      tiles.push({ x: gx * TILE_SIZE, y: gy * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, type: tData.type, rotation: tData.rotation });
+      tiles.push({ x: gx * TILE_SIZE, y: gy * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, type: tData.type, rotation: (Number(tData.rotation) || 0) % 360 });
     }
     return sanitizeLevel({
       width: EDITOR_LEVEL_WIDTH,
@@ -675,8 +675,8 @@ function initPlatformerGame() {
     const key = `${gx},${gy}`;
     if (editorTool === 'erase') editorTiles.delete(key);
     else if (editorTool === 'start') editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
-    else if (editorTool === 'blocks') editorTiles.set(key, { type: selectedBlockType, rotation: editorRotation });
-    else editorTiles.set(key, { type: editorTool, rotation: editorRotation });
+    else if (editorTool === 'blocks') editorTiles.set(key, { type: selectedBlockType, rotation: editorRotation % 360 });
+    else editorTiles.set(key, { type: editorTool, rotation: editorRotation % 360 });
   }
 
   function paintAt(pos) {
@@ -908,7 +908,7 @@ function initPlatformerGame() {
   function checkHazards() {
     for (const t of currentLevel.tiles) {
       if (HAZARD_TYPES.includes(t.type)) {
-        const rot = t.rotation || 0;
+        const rot = (Number(t.rotation) || 0) % 360;
         let hazardHitbox;
         if (rot === 90) {
           hazardHitbox = { x: t.x, y: t.y + (t.h * 0.2), w: t.w * 0.5, h: t.h * 0.6 };
@@ -1006,10 +1006,11 @@ function initPlatformerGame() {
 
   // ---- Tile Renderer ----
   function drawTile(sx, sy, w, h, type, rotation = 0) {
+    const exactRotation = (Number(rotation) || 0) % 360;
     ctx.save();
     ctx.translate(sx + w / 2, sy + h / 2);
-    if (rotation) {
-      ctx.rotate((rotation * Math.PI) / 180);
+    if (exactRotation !== 0) {
+      ctx.rotate((exactRotation * Math.PI) / 180);
     }
     const drawW = w;
     const drawH = h;
@@ -1255,7 +1256,7 @@ function initPlatformerGame() {
     ctx.restore();
 
     ctx.fillStyle = '#12141c';
-    ctx.fillRect(0, 0, canvas.width, 40);
+    ctx.fillRect(0, 0, canvas.width, canvas.height < 40 ? canvas.height : 40);
 
     for (const b of editorToolbar) {
       const active = (b.id === editorTool) || (b.id === 'pan' && editorTool === 'pan');
