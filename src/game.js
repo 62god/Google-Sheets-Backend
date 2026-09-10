@@ -146,7 +146,51 @@ function resetPlayer(reason) {
 const camera = { x: 0, y: 0 };
 
 // ---- App state ----
-let state = 'menu'; // 'menu' | 'editor' | 'play'
+let state = 'menu'; // 'menu' | 'editor' | 'play' | 'levelSelect'
+
+// ---- Preset Levels State ----
+let presetLevels = [];
+let isFetchingPresets = false;
+
+function fetchPresetManifest() {
+  if (isFetchingPresets || presetLevels.length > 0) return;
+  isFetchingPresets = true;
+  fetch(`${REPO_BASE}/levels/manifest.json`)
+    .then(res => {
+      if (!res.ok) throw new Error('Manifest not found');
+      return res.json();
+    })
+    .then(data => {
+      presetLevels = Array.isArray(data) ? data : (data.levels || []);
+      isFetchingPresets = false;
+    })
+    .catch(err => {
+      console.warn('Could not load levels manifest, using fallback:', err);
+      presetLevels = ['level1.json', 'level2.json', 'level3.json'];
+      isFetchingPresets = false;
+    });
+}
+
+function loadPresetLevel(filename) {
+  const url = `${REPO_BASE}/levels/${filename}`;
+  fetch(url)
+    .then(res => {
+      if (!res.ok) throw new Error(`Failed to load ${filename}`);
+      return res.json();
+    })
+    .then(raw => {
+      levelPlaylist = [];
+      currentLevel = sanitizeLevel(raw);
+      resetPlayer('preset');
+      camera.x = 0;
+      camera.y = 0;
+      levelComplete = false;
+      state = 'play';
+    })
+    .catch(err => {
+      alert(`Could not load preset level: ${err.message}`);
+    });
+}
 
 // ============================================================
 // DOM controls (editor panel + hidden file inputs)
@@ -425,8 +469,9 @@ menuImportInput.addEventListener('change', () => {
 
 // ---- Menu button geometry ----
 const menuButtons = [
-  { id: 'create', label: 'Create', x: 100, y: 160, w: 220, h: 140 },
-  { id: 'import', label: 'Import Pack/JSON', x: 460, y: 160, w: 220, h: 140 }
+  { id: 'create', label: 'Create', x: 250, y: 110, w: 300, h: 60 },
+  { id: 'import', label: 'Import Pack/JSON', x: 250, y: 190, w: 300, h: 60 },
+  { id: 'presets', label: 'Preset Levels', x: 250, y: 270, w: 300, h: 60 }
 ];
 
 // ---- Editor working state ----
@@ -493,7 +538,7 @@ window.addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
     e.preventDefault();
   }
-  if (e.code === 'Escape' && (state === 'editor' || state === 'play')) {
+  if (e.code === 'Escape' && (state === 'editor' || state === 'play' || state === 'levelSelect')) {
     state = 'menu';
   }
 }, { passive: false });
@@ -575,7 +620,34 @@ canvas.addEventListener('mousedown', e => {
           state = 'editor';
         } else if (b.id === 'import') {
           menuImportInput.click();
+        } else if (b.id === 'presets') {
+          fetchPresetManifest();
+          state = 'levelSelect';
         }
+      }
+    }
+    return;
+  }
+
+  if (state === 'levelSelect') {
+    // Back button
+    const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40 };
+    if (pointInRect(pos.x, pos.y, backBtn)) {
+      state = 'menu';
+      return;
+    }
+
+    // Preset level item buttons
+    let startY = 120;
+    const btnW = 400, btnH = 40, spacing = 10;
+    const startX = (canvas.width - btnW) / 2;
+
+    for (let i = 0; i < presetLevels.length; i++) {
+      const filename = presetLevels[i];
+      const itemRect = { x: startX, y: startY + i * (btnH + spacing), w: btnW, h: btnH };
+      if (pointInRect(pos.x, pos.y, itemRect)) {
+        loadPresetLevel(filename);
+        return;
       }
     }
     return;
@@ -779,7 +851,7 @@ function drawButton(b, active) {
   ctx.strokeStyle = '#cfd3dc';
   ctx.strokeRect(b.x, b.y, b.w, b.h);
   ctx.fillStyle = '#f0f2f5';
-  ctx.font = '12px sans-serif';
+  ctx.font = '14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
@@ -792,18 +864,62 @@ function drawMenu() {
   ctx.fillStyle = '#f0f2f5';
   ctx.font = '24px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('Platformer', canvas.width / 2, 90);
+  ctx.fillText('Platformer', canvas.width / 2, 60);
 
   for (const b of menuButtons) {
     ctx.strokeStyle = '#f0f2f5';
     ctx.lineWidth = 2;
     ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.font = '18px sans-serif';
+    ctx.font = '16px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
   }
   ctx.lineWidth = 1;
+}
+
+function drawLevelSelect() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#1b1f2a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#f0f2f5';
+  ctx.font = '24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Select Preset Level', canvas.width / 2, 50);
+
+  if (isFetchingPresets) {
+    ctx.font = '16px sans-serif';
+    ctx.fillText('Loading levels from GitHub...', canvas.width / 2, canvas.height / 2);
+  } else if (presetLevels.length === 0) {
+    ctx.font = '16px sans-serif';
+    ctx.fillText('No levels found in levels folder.', canvas.width / 2, canvas.height / 2);
+  } else {
+    let startY = 100;
+    const btnW = 400, btnH = 40, spacing = 10;
+    const startX = (canvas.width - btnW) / 2;
+
+    for (let i = 0; i < presetLevels.length; i++) {
+      const filename = presetLevels[i];
+      const displayName = filename.replace(/\.json$/i, '');
+      const itemRect = { x: startX, y: startY + i * (btnH + spacing), w: btnW, h: btnH };
+
+      ctx.fillStyle = '#2c2f3a';
+      ctx.fillRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
+      ctx.strokeStyle = '#cfd3dc';
+      ctx.strokeRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
+
+      ctx.fillStyle = '#f0f2f5';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(displayName, itemRect.x + itemRect.w / 2, itemRect.y + itemRect.h / 2);
+    }
+  }
+
+  // Back button
+  const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40 };
+  drawButton(backBtn, false);
 }
 
 function drawEditor() {
@@ -884,7 +1000,10 @@ function drawPlay() {
 function updateUI() {
   editorPanel.style.display = state === 'editor' ? 'flex' : 'none';
   if (state === 'menu') {
-    hint.textContent = 'Click Create to build, or Import to load a level pack (.zip) or single JSON';
+    hint.textContent = 'Click Create to build, Import to load a pack/JSON, or Preset Levels to play built-ins';
+    canvas.style.cursor = 'default';
+  } else if (state === 'levelSelect') {
+    hint.textContent = 'Select a preset level to play • Esc: menu';
     canvas.style.cursor = 'default';
   } else if (state === 'editor') {
     hint.textContent = editorTool === 'pan'
@@ -909,6 +1028,7 @@ function loop(now) {
   else if (state === 'editor') updateEditor(dt);
 
   if (state === 'menu') drawMenu();
+  else if (state === 'levelSelect') drawLevelSelect();
   else if (state === 'editor') drawEditor();
   else if (state === 'play') drawPlay();
 
