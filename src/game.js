@@ -879,7 +879,7 @@ function initPlatformerGame() {
 
   // ---- Tile Renderer ----
   function drawTile(sx, sy, w, h, type) {
-    const scale = (type === 'trophy') ? 1.5 : 1;
+    const scale = 1; // Standardized scale so all tiles match dimensions directly
     const drawW = w * scale;
     const drawH = h * scale;
     
