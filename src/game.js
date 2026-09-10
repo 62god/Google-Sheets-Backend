@@ -89,13 +89,13 @@ function initPlatformerGame() {
     backgroundColor: '#4a6fa5',
     playerStart: { x: 60, y: 260 },
     tiles: [
-      { x: 0,   y: 416, w: 800, h: 34, type: 'ground' },
-      { x: 160, y: 320, w: 128, h: 32, type: 'ground' },
-      { x: 352, y: 256, w: 128, h: 32, type: 'wood' },
-      { x: 544, y: 192, w: 160, h: 32, type: 'rock' },
-      { x: 32,  y: 192, w: 96,  h: 32, type: 'dirt' },
-      { x: 256, y: 384, w: 32,  h: 32, type: 'spike' },
-      { x: 704, y: 384, w: 32,  h: 32, type: 'trophy' }
+      { x: 0,   y: 416, w: 800, h: 34, type: 'ground', rotation: 0 },
+      { x: 160, y: 320, w: 128, h: 32, type: 'ground', rotation: 0 },
+      { x: 352, y: 256, w: 128, h: 32, type: 'wood', rotation: 0 },
+      { x: 544, y: 192, w: 160, h: 32, type: 'rock', rotation: 0 },
+      { x: 32,  y: 192, w: 96,  h: 32, type: 'dirt', rotation: 0 },
+      { x: 256, y: 384, w: 32,  h: 32, type: 'spike', rotation: 0 },
+      { x: 704, y: 384, w: 32,  h: 32, type: 'trophy', rotation: 0 }
     ]
   };
 
@@ -111,7 +111,14 @@ function initPlatformerGame() {
       },
       tiles: Array.isArray(raw.tiles) ? raw.tiles
         .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
-        .map(t => ({ x: t.x, y: t.y, w: t.w, h: t.h, type: t.type }))
+        .map(t => ({
+          x: t.x,
+          y: t.y,
+          w: t.w,
+          h: t.h,
+          type: t.type,
+          rotation: Number(t.rotation) || 0
+        }))
         : []
     };
 
@@ -507,6 +514,7 @@ function initPlatformerGame() {
   const editorTiles = new Map();
   let editorTool = 'blocks';
   let selectedBlockType = 'ground';
+  let editorRotation = 0; // 0, 90, 180, 270
   let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
   let isPanning = false;
@@ -522,12 +530,17 @@ function initPlatformerGame() {
       { id: 'spike', label: 'Spike' },
       { id: 'trophy', label: 'Trophy' },
       { id: 'start', label: 'Spawn' },
+      { id: 'rotLeft', label: '↺' },
+      { id: 'rotRight', label: '↻' },
       { id: 'erase', label: 'Erase' }
     ];
     let x = 10;
     const buttons = defs.map(d => {
-      const btn = { ...d, x, y: 5, w: (d.id === 'blocks' ? 85 : 72), h: 28 };
-      x += (d.id === 'blocks' ? 91 : 78);
+      let w = 64;
+      if (d.id === 'blocks') w = 85;
+      if (d.id === 'rotLeft' || d.id === 'rotRight') w = 36;
+      const btn = { ...d, x, y: 5, w, h: 28 };
+      x += w + 6;
       return btn;
     });
     buttons.push({ id: 'pan', label: '✋ Pan', x: canvas.width - 180, y: 5, w: 80, h: 28 });
@@ -582,11 +595,20 @@ function initPlatformerGame() {
     }
   });
 
+  function getTileData(t) {
+    if (!t) return { type: 'ground', rotation: 0 };
+    if (typeof t === 'string') return { type: t, rotation: 0 };
+    return { type: t.type || 'ground', rotation: t.rotation || 0 };
+  }
+
   function loadLevelIntoEditor(lvl) {
     editorTiles.clear();
     for (const t of lvl.tiles) {
       if (t.w === TILE_SIZE && t.h === TILE_SIZE) {
-        editorTiles.set(`${Math.round(t.x / TILE_SIZE)},${Math.round(t.y / TILE_SIZE)}`, t.type);
+        editorTiles.set(`${Math.round(t.x / TILE_SIZE)},${Math.round(t.y / TILE_SIZE)}`, {
+          type: t.type,
+          rotation: t.rotation || 0
+        });
       }
     }
     editorPlayerStart = { x: lvl.playerStart.x, y: lvl.playerStart.y };
@@ -600,9 +622,10 @@ function initPlatformerGame() {
 
   function exportEditorLevel() {
     const tiles = [];
-    for (const [key, type] of editorTiles.entries()) {
+    for (const [key, val] of editorTiles.entries()) {
       const [gx, gy] = key.split(',').map(Number);
-      tiles.push({ x: gx * TILE_SIZE, y: gy * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, type });
+      const tData = getTileData(val);
+      tiles.push({ x: gx * TILE_SIZE, y: gy * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, type: tData.type, rotation: tData.rotation });
     }
     return sanitizeLevel({
       width: EDITOR_LEVEL_WIDTH,
@@ -652,8 +675,8 @@ function initPlatformerGame() {
     const key = `${gx},${gy}`;
     if (editorTool === 'erase') editorTiles.delete(key);
     else if (editorTool === 'start') editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
-    else if (editorTool === 'blocks') editorTiles.set(key, selectedBlockType);
-    else editorTiles.set(key, editorTool);
+    else if (editorTool === 'blocks') editorTiles.set(key, { type: selectedBlockType, rotation: editorRotation });
+    else editorTiles.set(key, { type: editorTool, rotation: editorRotation });
   }
 
   function paintAt(pos) {
@@ -784,6 +807,14 @@ function initPlatformerGame() {
             blockDropdown.style.display = 'none';
             if (editorTool === 'pan') editorTool = lastPaintTool;
             else { lastPaintTool = editorTool; editorTool = 'pan'; }
+          } else if (b.id === 'rotLeft') {
+            blockDropdown.style.display = 'none';
+            editorRotation = (editorRotation - 90 + 360) % 360;
+            return;
+          } else if (b.id === 'rotRight') {
+            blockDropdown.style.display = 'none';
+            editorRotation = (editorRotation + 90) % 360;
+            return;
           } else if (b.id === 'blocks') {
             if (editorTool === 'blocks' && blockDropdown.style.display === 'block') {
               blockDropdown.style.display = 'none';
@@ -877,12 +908,18 @@ function initPlatformerGame() {
   function checkHazards() {
     for (const t of currentLevel.tiles) {
       if (HAZARD_TYPES.includes(t.type)) {
-        const hazardHitbox = {
-          x: t.x + (t.w * 0.2), 
-          y: t.y + (t.h * 0.5), 
-          w: t.w * 0.6,
-          h: t.h * 0.5
-        };
+        const rot = t.rotation || 0;
+        let hazardHitbox;
+        if (rot === 90) {
+          hazardHitbox = { x: t.x, y: t.y + (t.h * 0.2), w: t.w * 0.5, h: t.h * 0.6 };
+        } else if (rot === 180) {
+          hazardHitbox = { x: t.x + (t.w * 0.2), y: t.y, w: t.w * 0.6, h: t.h * 0.5 };
+        } else if (rot === 270) {
+          hazardHitbox = { x: t.x + (t.w * 0.5), y: t.y + (t.h * 0.2), w: t.w * 0.5, h: t.h * 0.6 };
+        } else {
+          hazardHitbox = { x: t.x + (t.w * 0.2), y: t.y + (t.h * 0.5), w: t.w * 0.6, h: t.h * 0.5 };
+        }
+
         if (rectsOverlap(player, hazardHitbox)) {
           resetPlayer('hazard');
           return true;
@@ -968,16 +1005,20 @@ function initPlatformerGame() {
   }
 
   // ---- Tile Renderer ----
-  function drawTile(sx, sy, w, h, type) {
-    const scale = 1;
-    const drawW = w * scale;
-    const drawH = h * scale;
-    
-    const drawX = sx - (drawW - w) / 2;
-    const drawY = sy - (drawH - h);
+  function drawTile(sx, sy, w, h, type, rotation = 0) {
+    ctx.save();
+    ctx.translate(sx + w / 2, sy + h / 2);
+    if (rotation) {
+      ctx.rotate((rotation * Math.PI) / 180);
+    }
+    const drawW = w;
+    const drawH = h;
+    const drawX = -drawW / 2;
+    const drawY = -drawH / 2;
 
     if (assets[type]) {
       ctx.drawImage(assets[type], drawX, drawY, drawW, drawH);
+      ctx.restore();
       return;
     }
 
@@ -1004,7 +1045,7 @@ function initPlatformerGame() {
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
       ctx.moveTo(drawX, drawY + drawH);
-      ctx.lineTo(drawX + drawW / 2, drawY + 2);
+      ctx.lineTo(drawX + drawW / 2, drawY);
       ctx.lineTo(drawX + drawW, drawY + drawH);
       ctx.closePath();
       ctx.fill();
@@ -1015,6 +1056,7 @@ function initPlatformerGame() {
       ctx.fillStyle = '#555';
       ctx.fillRect(drawX, drawY, drawW, drawH);
     }
+    ctx.restore();
     ctx.restore();
   }
 
@@ -1159,7 +1201,7 @@ function initPlatformerGame() {
     ctx.translate(-camera.x, -camera.y);
 
     for (const t of currentLevel.tiles) {
-      drawTile(t.x, t.y, t.w, t.h, t.type);
+      drawTile(t.x, t.y, t.w, t.h, t.type, t.rotation || 0);
     }
 
     if (assets.player) {
@@ -1201,9 +1243,10 @@ function initPlatformerGame() {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(EDITOR_LEVEL_WIDTH, y); ctx.stroke();
     }
 
-    for (const [key, type] of editorTiles.entries()) {
+    for (const [key, val] of editorTiles.entries()) {
       const [gx, gy] = key.split(',').map(Number);
-      drawTile(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE, type);
+      const tData = getTileData(val);
+      drawTile(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE, tData.type, tData.rotation);
     }
 
     ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
