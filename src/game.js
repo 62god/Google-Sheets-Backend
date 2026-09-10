@@ -27,7 +27,6 @@ function initPlatformerGame() {
   const SOLID_TYPES = ['ground', 'rock', 'wood', 'dirt'];
   const HAZARD_TYPES = ['spike'];
   const WIN_TYPES = ['trophy'];
-  const PALETTE_TYPES = ['blocks', ...HAZARD_TYPES, 'trophy'];
 
   // ---- Asset manifest ----
   const assetSources = {
@@ -345,50 +344,6 @@ function initPlatformerGame() {
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - (canvas.height - 40)), camera.y));
   }
 
-  // ---- Dropdown Category & Sub-category & Background Color Controls ----
-  let currentCategory = 'blocks';
-  let selectedBlockType = 'ground';
-
-  const categorySelect = document.createElement('select');
-  const catOptBlocks = document.createElement('option');
-  catOptBlocks.value = 'blocks';
-  catOptBlocks.textContent = 'Blocks';
-  categorySelect.appendChild(catOptBlocks);
-
-  const subCategorySelect = document.createElement('select');
-  const categories = {
-    blocks: [
-      { id: 'ground', name: 'Ground' },
-      { id: 'rock', name: 'Rock' },
-      { id: 'wood', name: 'Wood' },
-      { id: 'dirt', name: 'Dirt' }
-    ]
-  };
-
-  function updateSubCategoryDropdown(cat) {
-    subCategorySelect.innerHTML = '';
-    const items = categories[cat] || [];
-    items.forEach(item => {
-      const opt = document.createElement('option');
-      opt.value = item.id;
-      opt.textContent = item.name;
-      subCategorySelect.appendChild(opt);
-    });
-    if (items.length > 0) {
-      selectedBlockType = items[0].id;
-    }
-  }
-  updateSubCategoryDropdown('blocks');
-
-  categorySelect.addEventListener('change', (e) => {
-    currentCategory = e.target.value;
-    updateSubCategoryDropdown(currentCategory);
-  });
-
-  subCategorySelect.addEventListener('change', (e) => {
-    selectedBlockType = e.target.value;
-  });
-
   const bgColorPicker = document.createElement('input');
   bgColorPicker.type = 'color';
   bgColorPicker.value = '#4a6fa5';
@@ -407,9 +362,6 @@ function initPlatformerGame() {
   row2.appendChild(panelLabel('Height:'));
   row2.appendChild(editorHeightTiles);
   row2.appendChild(panelButton('Resize', applyEditorSize));
-  row2.appendChild(panelLabel('Cat:'));
-  row2.appendChild(categorySelect);
-  row2.appendChild(subCategorySelect);
   row2.appendChild(panelLabel('BG:'));
   row2.appendChild(bgColorPicker);
   editorPanel.appendChild(row2);
@@ -554,6 +506,7 @@ function initPlatformerGame() {
   // ---- Editor working state ----
   const editorTiles = new Map();
   let editorTool = 'blocks';
+  let selectedBlockType = 'ground';
   let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
   let isPanning = false;
@@ -565,7 +518,7 @@ function initPlatformerGame() {
 
   const editorToolbar = (() => {
     const defs = [
-      { id: 'blocks', label: 'Blocks' },
+      { id: 'blocks', label: 'Ground' },
       { id: 'spike', label: 'Spike' },
       { id: 'trophy', label: 'Trophy' },
       { id: 'start', label: 'Spawn' },
@@ -573,8 +526,8 @@ function initPlatformerGame() {
     ];
     let x = 10;
     const buttons = defs.map(d => {
-      const btn = { ...d, x, y: 5, w: 72, h: 28 };
-      x += 78;
+      const btn = { ...d, x, y: 5, w: (d.id === 'blocks' ? 85 : 72), h: 28 };
+      x += (d.id === 'blocks' ? 91 : 78);
       return btn;
     });
     buttons.push({ id: 'pan', label: '✋ Pan', x: canvas.width - 180, y: 5, w: 80, h: 28 });
@@ -582,6 +535,52 @@ function initPlatformerGame() {
     return buttons;
   })();
   let lastPaintTool = 'blocks';
+
+  // ---- In-canvas Blocks Dropdown Menu ----
+  const blockDropdown = document.createElement('div');
+  blockDropdown.style.display = 'none';
+  blockDropdown.style.position = 'absolute';
+  blockDropdown.style.background = '#1c1f2b';
+  blockDropdown.style.border = '1px solid #cfd3dc';
+  blockDropdown.style.borderRadius = '4px';
+  blockDropdown.style.zIndex = '1000';
+  blockDropdown.style.fontFamily = 'sans-serif';
+  blockDropdown.style.fontSize = '12px';
+  blockDropdown.style.color = '#cfd3dc';
+  blockDropdown.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
+
+  const blockTypes = [
+    { id: 'ground', name: 'Ground' },
+    { id: 'rock', name: 'Rock' },
+    { id: 'wood', name: 'Wood' },
+    { id: 'dirt', name: 'Dirt' }
+  ];
+
+  blockTypes.forEach(bt => {
+    const item = document.createElement('div');
+    item.textContent = bt.name;
+    item.style.padding = '6px 14px';
+    item.style.cursor = 'pointer';
+    item.addEventListener('mouseenter', () => item.style.background = '#2c2f3a');
+    item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectedBlockType = bt.id;
+      editorTool = 'blocks';
+      lastPaintTool = 'blocks';
+      const blocksBtn = editorToolbar.find(b => b.id === 'blocks');
+      if (blocksBtn) blocksBtn.label = bt.name;
+      blockDropdown.style.display = 'none';
+    });
+    blockDropdown.appendChild(item);
+  });
+  document.body.appendChild(blockDropdown);
+
+  window.addEventListener('click', (e) => {
+    if (!blockDropdown.contains(e.target) && e.target !== canvas) {
+      blockDropdown.style.display = 'none';
+    }
+  });
 
   function loadLevelIntoEditor(lvl) {
     editorTiles.clear();
@@ -623,6 +622,7 @@ function initPlatformerGame() {
     }
     if (e.code === 'Escape' && (state === 'editor' || state === 'play' || state === 'levelSelect' || state === 'settings')) {
       state = 'menu';
+      blockDropdown.style.display = 'none';
     }
   }, { passive: false });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -711,6 +711,7 @@ function initPlatformerGame() {
     const pos = getCanvasPos(e);
 
     if (state === 'menu') {
+      blockDropdown.style.display = 'none';
       for (const b of menuButtons) {
         if (pointInRect(pos.x, pos.y, b)) {
           if (b.id === 'create') {
@@ -732,6 +733,7 @@ function initPlatformerGame() {
     }
 
     if (state === 'settings') {
+      blockDropdown.style.display = 'none';
       const trackX = canvas.width / 2 - 120;
       const trackW = 240;
       const musicBar = { x: trackX, y: 130, w: trackW, h: 30 };
@@ -751,6 +753,7 @@ function initPlatformerGame() {
     }
 
     if (state === 'levelSelect') {
+      blockDropdown.style.display = 'none';
       const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40, label: 'Menu' };
       if (pointInRect(pos.x, pos.y, backBtn)) {
         state = 'menu';
@@ -775,17 +778,35 @@ function initPlatformerGame() {
       for (const b of editorToolbar) {
         if (pointInRect(pos.x, pos.y, b)) {
           if (b.id === 'menu') {
+            blockDropdown.style.display = 'none';
             state = 'menu';
           } else if (b.id === 'pan') {
+            blockDropdown.style.display = 'none';
             if (editorTool === 'pan') editorTool = lastPaintTool;
             else { lastPaintTool = editorTool; editorTool = 'pan'; }
+          } else if (b.id === 'blocks') {
+            if (editorTool === 'blocks' && blockDropdown.style.display === 'block') {
+              blockDropdown.style.display = 'none';
+            } else {
+              editorTool = 'blocks';
+              lastPaintTool = 'blocks';
+              const rect = canvas.getBoundingClientRect();
+              const scaleX = rect.width / canvas.width;
+              const scaleY = rect.height / canvas.height;
+              blockDropdown.style.left = `${rect.left + (b.x * scaleX)}px`;
+              blockDropdown.style.top = `${rect.top + ((b.y + b.h + 4) * scaleY)}px`;
+              blockDropdown.style.display = 'block';
+            }
           } else {
+            blockDropdown.style.display = 'none';
             editorTool = b.id;
             lastPaintTool = b.id;
           }
           return;
         }
       }
+
+      blockDropdown.style.display = 'none';
 
       if (editorTool === 'pan') {
         isPanning = true;
@@ -1031,24 +1052,20 @@ function initPlatformerGame() {
   }
 
   function drawSlider(label, value, x, y, w, h) {
-    // Label
     ctx.fillStyle = '#f0f2f5';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${label}: ${Math.round(value * 100)}%`, x, y - 6);
 
-    // Track Background
     ctx.fillStyle = '#2c2f3a';
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = '#cfd3dc';
     ctx.strokeRect(x, y, w, h);
 
-    // Filled Track Amount
     ctx.fillStyle = '#4a6fa5';
     ctx.fillRect(x, y, w * value, h);
 
-    // Thumb handle
     const thumbX = x + (w * value);
     ctx.fillStyle = '#f0f2f5';
     ctx.fillRect(thumbX - 6, y - 4, 12, h + 8);
@@ -1069,13 +1086,9 @@ function initPlatformerGame() {
     const trackX = canvas.width / 2 - 120;
     const trackW = 240;
 
-    // Draw Music Volume Slider
     drawSlider('Music Volume', gameSettings.musicVolume, trackX, 130, trackW, 20);
-
-    // Draw SFX Volume Slider
     drawSlider('SFX Volume', gameSettings.sfxVolume, trackX, 220, trackW, 20);
 
-    // Draw Back Button
     const backBtn = { x: canvas.width / 2 - 100, y: 320, w: 200, h: 40 };
     ctx.fillStyle = '#2c2f3a';
     ctx.fillRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
@@ -1216,12 +1229,15 @@ function initPlatformerGame() {
     if (state === 'menu') {
       drawMenu();
       editorPanel.style.display = 'none';
+      blockDropdown.style.display = 'none';
     } else if (state === 'levelSelect') {
       drawLevelSelect();
       editorPanel.style.display = 'none';
+      blockDropdown.style.display = 'none';
     } else if (state === 'settings') {
       drawSettings();
       editorPanel.style.display = 'none';
+      blockDropdown.style.display = 'none';
     } else if (state === 'editor') {
       updateEditor(dt);
       drawEditor();
@@ -1230,6 +1246,7 @@ function initPlatformerGame() {
       updatePlay(dt);
       drawPlay();
       editorPanel.style.display = 'none';
+      blockDropdown.style.display = 'none';
     }
 
     requestAnimationFrame(loop);
