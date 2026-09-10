@@ -18,7 +18,7 @@ function initPlatformerGame() {
   // ---- Tunable physics constants ----
   const GRAVITY = 1400;
   const JUMP_VELOCITY = -520;
-  const MOVE_SPEED = 260;
+  const MOVE_SPEED = 280;
   const FRICTION_GROUND = 0.85;
   const TILE_SIZE = 32;
   const SCROLL_SPEED = 400; // px/s, editor camera pan
@@ -28,9 +28,6 @@ function initPlatformerGame() {
   const HAZARD_TYPES = ['spike'];
   const WIN_TYPES = ['trophy'];
   const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES, 'trophy'];
-  const TILE_FALLBACK_COLORS = {
-    ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b', dirt: '#8b4513', spike: '#c0392b', trophy: '#f1c40f'
-  };
 
   // ---- Asset manifest ----
   const assetSources = {
@@ -56,7 +53,7 @@ function initPlatformerGame() {
       if (/\.(mp3|wav|ogg)$/i.test(src)) {
         const audio = new Audio();
         audio.oncanplaythrough = settle;
-        audio.onerror = () => { console.warn(`Missing audio asset: ${key}`); assets[key] = null; settle(); };
+        audio.onerror = () => { assets[key] = null; settle(); };
         audio.src = src;
         if (key === 'music') {
           audio.loop = true;
@@ -66,7 +63,7 @@ function initPlatformerGame() {
       } else {
         const img = new Image();
         img.onload = settle;
-        img.onerror = () => { console.warn(`Missing image asset: ${key}, using fallback`); assets[key] = null; settle(); };
+        img.onerror = () => { assets[key] = null; settle(); };
         img.src = src;
         assets[key] = img;
       }
@@ -83,7 +80,7 @@ function initPlatformerGame() {
   // ---- Default level ----
   const DEFAULT_LEVEL = {
     width: 800, height: 450,
-    playerStart: { x: 60, y: 280 },
+    playerStart: { x: 60, y: 260 },
     tiles: [
       { x: 0,   y: 416, w: 800, h: 34, type: 'ground' },
       { x: 160, y: 320, w: 128, h: 32, type: 'ground' },
@@ -102,7 +99,7 @@ function initPlatformerGame() {
       height: Number(raw.height) || 450,
       playerStart: {
         x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
-        y: (raw.playerStart && Number(raw.playerStart.y)) || 280
+        y: (raw.playerStart && Number(raw.playerStart.y)) || 260
       },
       tiles: Array.isArray(raw.tiles) ? raw.tiles
         .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
@@ -120,8 +117,8 @@ function initPlatformerGame() {
       lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
     }
 
-    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 32, lvl.playerStart.x));
-    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 48, lvl.playerStart.y));
+    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 48, lvl.playerStart.x));
+    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 64, lvl.playerStart.y));
 
     return lvl;
   }
@@ -149,13 +146,9 @@ function initPlatformerGame() {
     return Math.max(level.height, maxBottom);
   }
 
-  // ---- Player ----
-  const player = { x: 60, y: 280, w: 32, h: 48, vx: 0, vy: 0, onGround: false };
+  // ---- Player (Bigger size: 48x64 px, crisp 16x16 style scaled up) ----
+  const player = { x: 60, y: 260, w: 48, h: 64, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
-    console.log(
-      `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
-      `floorY=${levelFloorY(currentLevel).toFixed(1)} onGround=${player.onGround}`
-    );
     if (reason === 'hazard' && assets.deathSound) {
       assets.deathSound.currentTime = 0;
       assets.deathSound.play().catch(() => {});
@@ -262,11 +255,11 @@ function initPlatformerGame() {
   const LIBRARY_KEY = 'platformer_levels_v1';
   function loadLibrary() {
     try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '{}'); }
-    catch (e) { console.warn('Level library unavailable:', e); return {}; }
+    catch (e) { return {}; }
   }
   function saveLibrary(lib) {
     try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib)); }
-    catch (e) { console.warn('Could not save level library:', e); }
+    catch (e) {}
   }
 
   const levelSelect = document.createElement('select');
@@ -317,7 +310,7 @@ function initPlatformerGame() {
   }));
   row1.appendChild(panelButton('New', () => {
     editorTiles.clear();
-    editorPlayerStart = { x: 60, y: 280 };
+    editorPlayerStart = { x: 60, y: 260 };
     editorWidthTiles.value = 25; editorHeightTiles.value = 14;
     applyEditorSize();
     camera.x = 0; camera.y = 0;
@@ -425,9 +418,7 @@ function initPlatformerGame() {
               name: filename.replace(/\.json$/i, ''),
               level: sanitized
             });
-          } catch (e) {
-            console.warn(`Skipping invalid JSON in zip: ${relativePath}`, e);
-          }
+          } catch (e) {}
         }
 
         extractedLevels.sort((a, b) => a.number - b.number);
@@ -501,7 +492,7 @@ function initPlatformerGame() {
   // ---- Editor working state ----
   const editorTiles = new Map(); // "gx,gy" -> type
   let editorTool = 'ground';
-  let editorPlayerStart = { x: 60, y: 280 };
+  let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
   let isPanning = false;
   let panStart = { x: 0, y: 0 };
@@ -724,7 +715,7 @@ function initPlatformerGame() {
     dragStartGY = null;
   });
 
-  // ---- Collision helpers (with anti-tunneling fix) ----
+  // ---- Collision helpers ----
   function rectsOverlap(a, b) {
     return a.x < b.x + b.w && a.x + a.w > b.x &&
            a.y < b.y + b.h && a.y + a.h > b.y;
@@ -843,27 +834,82 @@ function initPlatformerGame() {
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - viewH), camera.y));
   }
 
-  // ---- Draw helpers ----
+  // ---- High-detail crisp pixel fallback drawing for tiles ----
   function drawTile(sx, sy, w, h, type) {
     if (assets[type]) {
       ctx.drawImage(assets[type], sx, sy, w, h);
+      return;
+    }
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    if (type === 'ground') {
+      // Lush pixel grass top + rich dirt body
+      ctx.fillStyle = '#4a7c3b';
+      ctx.fillRect(sx, sy, w, h * 0.3);
+      ctx.fillStyle = '#325426';
+      ctx.fillRect(sx, sy + h * 0.3, w, h * 0.1);
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(sx, sy + h * 0.4, w, h * 0.6);
+      // Pixel speckles for texture
+      ctx.fillStyle = '#6d431c';
+      ctx.fillRect(sx + 4, sy + h * 0.5, 4, 4);
+      ctx.fillRect(sx + w - 12, sy + h * 0.7, 4, 4);
+      ctx.fillRect(sx + w / 2 - 2, sy + h * 0.8, 4, 4);
+    } else if (type === 'rock') {
+      ctx.fillStyle = '#7a8288';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#5c6368';
+      ctx.fillRect(sx + 4, sy + 4, w - 8, h - 8);
+      ctx.fillStyle = '#9da4ab';
+      ctx.fillRect(sx + 6, sy + 6, w - 16, 4);
+      ctx.fillStyle = '#43484d';
+      ctx.fillRect(sx + w - 10, sy + h - 12, 6, 6);
+    } else if (type === 'wood') {
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#6b4420';
+      ctx.fillRect(sx, sy + 6, w, 4);
+      ctx.fillRect(sx, sy + h - 10, w, 4);
+      ctx.fillStyle = '#a8733e';
+      ctx.fillRect(sx + 8, sy, 4, h);
+      ctx.fillRect(sx + w - 12, sy, 4, h);
+    } else if (type === 'dirt') {
+      ctx.fillStyle = '#784212';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.fillStyle = '#5c310b';
+      ctx.fillRect(sx + 4, sy + 4, 6, 6);
+      ctx.fillRect(sx + w - 10, sy + h - 10, 6, 6);
+      ctx.fillRect(sx + w / 2 - 4, sy + h / 2 - 4, 8, 6);
     } else if (type === 'spike') {
-      ctx.fillStyle = TILE_FALLBACK_COLORS.spike;
+      ctx.fillStyle = '#c0392b';
       ctx.beginPath();
       ctx.moveTo(sx, sy + h);
-      ctx.lineTo(sx + w / 2, sy);
+      ctx.lineTo(sx + w / 2, sy + 2);
       ctx.lineTo(sx + w, sy + h);
       ctx.closePath();
       ctx.fill();
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.moveTo(sx + 4, sy + h);
+      ctx.lineTo(sx + w / 2, sy + 6);
+      ctx.lineTo(sx + w / 2, sy + h);
+      ctx.closePath();
+      ctx.fill();
     } else if (type === 'trophy') {
-      ctx.fillStyle = TILE_FALLBACK_COLORS.trophy;
-      ctx.fillRect(sx + w * 0.2, sy + h * 0.1, w * 0.6, h * 0.8);
-      ctx.strokeStyle = '#d4ac0d';
-      ctx.strokeRect(sx + w * 0.2, sy + h * 0.1, w * 0.6, h * 0.8);
+      ctx.fillStyle = '#f1c40f';
+      ctx.fillRect(sx + w * 0.3, sy + h * 0.2, w * 0.4, h * 0.5);
+      ctx.fillStyle = '#d4ac0d';
+      ctx.fillRect(sx + w * 0.2, sy + h * 0.65, w * 0.6, h * 0.15);
+      ctx.fillRect(sx + w * 0.4, sy + h * 0.8, w * 0.2, h * 0.1);
+      ctx.fillStyle = '#fef5d1';
+      ctx.fillRect(sx + w * 0.35, sy + h * 0.25, 4, 8);
     } else {
-      ctx.fillStyle = TILE_FALLBACK_COLORS[type] || '#555';
+      ctx.fillStyle = '#555';
       ctx.fillRect(sx, sy, w, h);
     }
+    ctx.restore();
   }
 
   function drawButton(b, active) {
@@ -982,12 +1028,31 @@ function initPlatformerGame() {
   function drawPlayer() {
     const psx = player.x - camera.x;
     const psy = player.y - camera.y;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
     if (assets.player) {
       ctx.drawImage(assets.player, psx, psy, player.w, player.h);
     } else {
+      // Detailed pixel player fallback (48x64 px crisp rendering)
+      // Body (red tunic)
       ctx.fillStyle = '#e94f37';
-      ctx.fillRect(psx, psy, player.w, player.h);
+      ctx.fillRect(psx + 8, psy + 20, 32, 32);
+      // Head / Face
+      ctx.fillStyle = '#f5c6a5';
+      ctx.fillRect(psx + 12, psy + 4, 24, 20);
+      // Hat/Hair
+      ctx.fillStyle = '#c0392b';
+      ctx.fillRect(psx + 10, psy, 28, 8);
+      // Eyes
+      ctx.fillStyle = '#2c3e50';
+      ctx.fillRect(psx + 18, psy + 10, 4, 4);
+      ctx.fillRect(psx + 28, psy + 10, 4, 4);
+      // Boots
+      ctx.fillStyle = '#34495e';
+      ctx.fillRect(psx + 8, psy + 52, 12, 12);
+      ctx.fillRect(psx + 28, psy + 52, 12, 12);
     }
+    ctx.restore();
   }
 
   function drawPlay() {
