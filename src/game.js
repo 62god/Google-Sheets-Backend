@@ -345,17 +345,48 @@ function initPlatformerGame() {
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - (canvas.height - 40)), camera.y));
   }
 
-  // ---- Block Type & Background Color Controls ----
+  // ---- Dropdown Category & Sub-category & Background Color Controls ----
+  let currentCategory = 'blocks';
   let selectedBlockType = 'ground';
-  const blockTypeSelect = document.createElement('select');
-  SOLID_TYPES.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t[0].toUpperCase() + t.slice(1);
-    blockTypeSelect.appendChild(opt);
+
+  const categorySelect = document.createElement('select');
+  const catOptBlocks = document.createElement('option');
+  catOptBlocks.value = 'blocks';
+  catOptBlocks.textContent = 'Blocks';
+  categorySelect.appendChild(catOptBlocks);
+
+  const subCategorySelect = document.createElement('select');
+  const categories = {
+    blocks: [
+      { id: 'ground', name: 'Ground' },
+      { id: 'rock', name: 'Rock' },
+      { id: 'wood', name: 'Wood' },
+      { id: 'dirt', name: 'Dirt' }
+    ]
+  };
+
+  function updateSubCategoryDropdown(cat) {
+    subCategorySelect.innerHTML = '';
+    const items = categories[cat] || [];
+    items.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.name;
+      subCategorySelect.appendChild(opt);
+    });
+    if (items.length > 0) {
+      selectedBlockType = items[0].id;
+    }
+  }
+  updateSubCategoryDropdown('blocks');
+
+  categorySelect.addEventListener('change', (e) => {
+    currentCategory = e.target.value;
+    updateSubCategoryDropdown(currentCategory);
   });
-  blockTypeSelect.addEventListener('change', () => {
-    selectedBlockType = blockTypeSelect.value;
+
+  subCategorySelect.addEventListener('change', (e) => {
+    selectedBlockType = e.target.value;
   });
 
   const bgColorPicker = document.createElement('input');
@@ -376,9 +407,10 @@ function initPlatformerGame() {
   row2.appendChild(panelLabel('Height:'));
   row2.appendChild(editorHeightTiles);
   row2.appendChild(panelButton('Resize', applyEditorSize));
-  row2.appendChild(panelLabel('Block:'));
-  row2.appendChild(blockTypeSelect);
-  row2.appendChild(panelLabel('BG Color:'));
+  row2.appendChild(panelLabel('Cat:'));
+  row2.appendChild(categorySelect);
+  row2.appendChild(subCategorySelect);
+  row2.appendChild(panelLabel('BG:'));
   row2.appendChild(bgColorPicker);
   editorPanel.appendChild(row2);
 
