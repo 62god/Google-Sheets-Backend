@@ -72,10 +72,14 @@ function initPlatformerGame() {
   }
 
   function startMusic() {
-    if (assets.music && assets.music.paused) {
+    if (musicEnabled && assets.music && assets.music.paused) {
       assets.music.play().catch(() => {});
     }
   }
+
+  // ---- Settings State ----
+  let musicEnabled = true;
+  let sfxEnabled = true;
 
   // ---- Default level ----
   const DEFAULT_LEVEL = {
@@ -149,7 +153,7 @@ function initPlatformerGame() {
   // ---- Player (Matched to ground tile size: 32x32 px) ----
   const player = { x: 60, y: 260, w: TILE_SIZE, h: TILE_SIZE, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
-    if (reason === 'hazard' && assets.deathSound) {
+    if (reason === 'hazard' && sfxEnabled && assets.deathSound) {
       assets.deathSound.currentTime = 0;
       assets.deathSound.play().catch(() => {});
     }
@@ -162,7 +166,7 @@ function initPlatformerGame() {
   const camera = { x: 0, y: 0 };
 
   // ---- App state ----
-  let state = 'menu'; // 'menu' | 'editor' | 'play' | 'levelSelect'
+  let state = 'menu'; // 'menu' | 'editor' | 'play' | 'levelSelect' | 'settings'
 
   // ---- Preset Levels State ----
   let presetLevels = [];
@@ -484,9 +488,17 @@ function initPlatformerGame() {
 
   // ---- Menu button geometry ----
   const menuButtons = [
-    { id: 'create', label: 'Create', x: 250, y: 110, w: 300, h: 60 },
-    { id: 'import', label: 'Import Pack/JSON', x: 250, y: 190, w: 300, h: 60 },
-    { id: 'presets', label: 'Preset Levels', x: 250, y: 270, w: 300, h: 60 }
+    { id: 'create', label: 'Create', x: 250, y: 90, w: 300, h: 50 },
+    { id: 'import', label: 'Import Pack/JSON', x: 250, y: 155, w: 300, h: 50 },
+    { id: 'presets', label: 'Preset Levels', x: 250, y: 220, w: 300, h: 50 },
+    { id: 'settings', label: 'Settings', x: 250, y: 285, w: 300, h: 50 }
+  ];
+
+  // ---- Settings button geometry ----
+  const settingsButtons = [
+    { id: 'toggleMusic', label: () => `Music: ${musicEnabled ? 'ON' : 'OFF'}`, x: 250, y: 130, w: 300, h: 50 },
+    { id: 'toggleSfx', label: () => `SFX: ${sfxEnabled ? 'ON' : 'OFF'}`, x: 250, y: 200, w: 300, h: 50 },
+    { id: 'back', label: 'Back to Menu', x: 250, y: 320, w: 300, h: 50 }
   ];
 
   // ---- Editor working state ----
@@ -503,8 +515,8 @@ function initPlatformerGame() {
 
   const editorToolbar = (() => {
     const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
-                  { id: 'start', label: 'Spawn' },
-                  { id: 'erase', label: 'Erase' }];
+                    { id: 'start', label: 'Spawn' },
+                    { id: 'erase', label: 'Erase' }];
     let x = 10;
     const buttons = defs.map(d => {
       const btn = { ...d, x, y: 5, w: 72, h: 28 };
@@ -553,7 +565,7 @@ function initPlatformerGame() {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
       e.preventDefault();
     }
-    if (e.code === 'Escape' && (state === 'editor' || state === 'play' || state === 'levelSelect')) {
+    if (e.code === 'Escape' && (state === 'editor' || state === 'play' || state === 'levelSelect' || state === 'settings')) {
       state = 'menu';
     }
   }, { passive: false });
@@ -638,6 +650,27 @@ function initPlatformerGame() {
           } else if (b.id === 'presets') {
             fetchPresetManifest();
             state = 'levelSelect';
+          } else if (b.id === 'settings') {
+            state = 'settings';
+          }
+        }
+      }
+      return;
+    }
+
+    if (state === 'settings') {
+      for (const b of settingsButtons) {
+        if (pointInRect(pos.x, pos.y, b)) {
+          if (b.id === 'toggleMusic') {
+            musicEnabled = !musicEnabled;
+            if (assets.music) {
+              if (musicEnabled) assets.music.play().catch(() => {});
+              else assets.music.pause();
+            }
+          } else if (b.id === 'toggleSfx') {
+            sfxEnabled = !sfxEnabled;
+          } else if (b.id === 'back') {
+            state = 'menu';
           }
         }
       }
@@ -787,7 +820,7 @@ function initPlatformerGame() {
     if (isDown('Space', 'ArrowUp', 'KeyW') && player.onGround) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
-      if (assets.jumpSound) {
+      if (sfxEnabled && assets.jumpSound) {
         assets.jumpSound.currentTime = 0;
         assets.jumpSound.play().catch(() => {});
       }
@@ -837,6 +870,7 @@ function initPlatformerGame() {
   // ---- High-detail crisp pixel fallback drawing for tiles ----
   function drawTile(sx, sy, w, h, type) {
     if (assets[type]) {
+      // For trophy or any sprite, normalize to fill TILE_SIZE (w x h) matching other sprites
       ctx.drawImage(assets[type], sx, sy, w, h);
       return;
     }
@@ -845,14 +879,12 @@ function initPlatformerGame() {
     ctx.imageSmoothingEnabled = false;
 
     if (type === 'ground') {
-      // Lush pixel grass top + rich dirt body
       ctx.fillStyle = '#4a7c3b';
       ctx.fillRect(sx, sy, w, h * 0.3);
       ctx.fillStyle = '#325426';
       ctx.fillRect(sx, sy + h * 0.3, w, h * 0.1);
       ctx.fillStyle = '#8b5a2b';
       ctx.fillRect(sx, sy + h * 0.4, w, h * 0.6);
-      // Pixel speckles for texture
       ctx.fillStyle = '#6d431c';
       ctx.fillRect(sx + 4, sy + h * 0.5, 4, 4);
       ctx.fillRect(sx + w - 12, sy + h * 0.7, 4, 4);
@@ -931,7 +963,7 @@ function initPlatformerGame() {
     ctx.fillStyle = '#f0f2f5';
     ctx.font = '24px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Platformer', canvas.width / 2, 60);
+    ctx.fillText('Platformer', canvas.width / 2, 45);
 
     for (const b of menuButtons) {
       ctx.strokeStyle = '#f0f2f5';
@@ -941,6 +973,28 @@ function initPlatformerGame() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
+    }
+    ctx.lineWidth = 1;
+  }
+
+  function drawSettings() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1b1f2a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#f0f2f5';
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Settings', canvas.width / 2, 70);
+
+    for (const b of settingsButtons) {
+      const labelText = typeof b.label === 'function' ? b.label() : b.label;
+      ctx.strokeStyle = '#f0f2f5';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      ctx.font = '16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelText, b.x + b.w / 2, b.y + b.h / 2);
     }
     ctx.lineWidth = 1;
   }
@@ -970,16 +1024,9 @@ function initPlatformerGame() {
         const filename = presetLevels[i];
         const displayName = filename.replace(/\.json$/i, '');
         const itemRect = { x: startX, y: startY + i * (btnH + spacing), w: btnW, h: btnH };
-
-        ctx.fillStyle = '#2c2f3a';
-        ctx.fillRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
-        ctx.strokeStyle = '#cfd3dc';
-        ctx.strokeRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
-
+        drawButton(itemRect, false);
         ctx.fillStyle = '#f0f2f5';
-        ctx.font = '14px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.font = '16px sans-serif';
         ctx.fillText(displayName, itemRect.x + itemRect.w / 2, itemRect.y + itemRect.h / 2);
       }
     }
@@ -988,147 +1035,67 @@ function initPlatformerGame() {
     drawButton(backBtn, false);
   }
 
-  function drawEditor() {
+  function drawGame() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#87ceeb';
-    ctx.fillRect(0, 40, canvas.width, canvas.height - 40);
-
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    const startGX = Math.floor(camera.x / TILE_SIZE);
-    for (let gx = startGX; gx * TILE_SIZE - camera.x < canvas.width; gx++) {
-      const sx = gx * TILE_SIZE - camera.x;
-      ctx.beginPath(); ctx.moveTo(sx, 40); ctx.lineTo(sx, canvas.height); ctx.stroke();
-    }
-    const startGY = Math.floor(camera.y / TILE_SIZE);
-    for (let gy = startGY; gy * TILE_SIZE - camera.y < canvas.height; gy++) {
-      const sy = Math.max(40, gy * TILE_SIZE - camera.y);
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
-    }
-
-    for (const [key, type] of editorTiles.entries()) {
-      const [gx, gy] = key.split(',').map(Number);
-      const sx = gx * TILE_SIZE - camera.x;
-      const sy = gy * TILE_SIZE - camera.y;
-      if (sx + TILE_SIZE < 0 || sx > canvas.width || sy + TILE_SIZE < 40 || sy > canvas.height) continue;
-      drawTile(sx, sy, TILE_SIZE, TILE_SIZE, type);
-    }
-
-    const spawnSX = editorPlayerStart.x - camera.x;
-    const spawnSY = editorPlayerStart.y - camera.y;
-    ctx.fillStyle = '#f2c744';
-    ctx.beginPath();
-    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#12141c';
-    ctx.fillRect(0, 0, canvas.width, 40);
-    for (const b of editorToolbar) drawButton(b, b.id === editorTool);
-  }
-
-  function drawPlayer() {
-    const psx = player.x - camera.x;
-    const psy = player.y - camera.y;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    if (assets.player) {
-      ctx.drawImage(assets.player, psx, psy, player.w, player.h);
-    } else {
-      // 32x32 crisp pixel player fallback (matching tile size)
-      // Body (red tunic)
-      ctx.fillStyle = '#e94f37';
-      ctx.fillRect(psx + 6, psy + 10, 20, 16);
-      // Head / Face
-      ctx.fillStyle = '#f5c6a5';
-      ctx.fillRect(psx + 8, psy + 2, 16, 10);
-      // Hat/Hair
-      ctx.fillStyle = '#c0392b';
-      ctx.fillRect(psx + 6, psy, 20, 4);
-      // Eyes
-      ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(psx + 11, psy + 5, 2, 2);
-      ctx.fillRect(psx + 19, psy + 5, 2, 2);
-      // Boots
-      ctx.fillStyle = '#34495e';
-      ctx.fillRect(psx + 7, psy + 26, 6, 6);
-      ctx.fillRect(psx + 19, psy + 26, 6, 6);
-    }
-    ctx.restore();
-  }
-
-  function drawPlay() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#87ceeb';
+    ctx.fillStyle = '#222634';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
     for (const t of currentLevel.tiles) {
-      const sx = t.x - camera.x, sy = t.y - camera.y;
-      if (sx + t.w < 0 || sx > canvas.width || sy + t.h < 0 || sy > canvas.height) continue;
-      drawTile(sx, sy, t.w, t.h, t.type);
+      drawTile(t.x, t.y, t.w, t.h, t.type);
     }
 
-    drawPlayer();
+    if (assets.player) {
+      ctx.drawImage(assets.player, player.x, player.y, player.w, player.h);
+    } else {
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+    }
 
-    if (levelComplete) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '28px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Level Pack Complete!', canvas.width / 2, canvas.height / 2 - 20);
-      ctx.font = '16px sans-serif';
-      ctx.fillText('Press Esc to return to Menu', canvas.width / 2, canvas.height / 2 + 20);
+    ctx.restore();
+
+    if (state === 'editor') {
+      ctx.fillStyle = '#12141c';
+      ctx.fillRect(0, 0, canvas.width, 40);
+      for (const b of editorToolbar) {
+        const active = (b.id === editorTool) || (b.id === 'pan' && editorTool === 'pan');
+        drawButton(b, active);
+      }
     }
   }
 
-  // ---- UI visibility + hint text per state ----
-  function updateUI() {
-    editorPanel.style.display = state === 'editor' ? 'flex' : 'none';
+  function draw() {
     if (state === 'menu') {
-      hint.textContent = 'Click Create to build, Import to load a pack/JSON, or Preset Levels to play built-ins';
-      canvas.style.cursor = 'default';
+      drawMenu();
+    } else if (state === 'settings') {
+      drawSettings();
     } else if (state === 'levelSelect') {
-      hint.textContent = 'Select a preset level to play • Esc: menu';
-      canvas.style.cursor = 'default';
-    } else if (state === 'editor') {
-      hint.textContent = editorTool === 'pan'
-        ? 'Pan mode: drag to scroll • Click ✋ Pan again to resume editing • Esc: menu'
-        : 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
-      canvas.style.cursor = editorTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'crosshair';
-    } else if (state === 'play') {
-      hint.textContent = levelComplete ? 'Press Esc to return to Menu' : 'Move: ← → or A/D • Jump: Space/↑/W • Esc: menu';
-      canvas.style.cursor = 'default';
+      drawLevelSelect();
+    } else if (state === 'play' || state === 'editor') {
+      drawGame();
     }
   }
 
-  // ---- Main loop ----
   let lastTime = performance.now();
   function loop(now) {
-    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    const dt = Math.min(0.1, (now - lastTime) / 1000);
     lastTime = now;
 
-    updateUI();
+    if (state === 'play') {
+      startMusic();
+      updatePlay(dt);
+    } else if (state === 'editor') {
+      updateEditor(dt);
+    }
 
-    if (state === 'play') updatePlay(dt);
-    else if (state === 'editor') updateEditor(dt);
-
-    if (state === 'menu') drawMenu();
-    else if (state === 'levelSelect') drawLevelSelect();
-    else if (state === 'editor') drawEditor();
-    else if (state === 'play') drawPlay();
-
+    draw();
     requestAnimationFrame(loop);
   }
 
   loadAssets(() => {
-    startMusic();
-    lastTime = performance.now();
+    editorPanel.style.display = 'flex';
     requestAnimationFrame(loop);
   });
-}
-
-if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', initPlatformerGame);
-} else {
-  initPlatformerGame();
 }
