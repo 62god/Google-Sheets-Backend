@@ -12,6 +12,7 @@ function initPlatformerGame() {
     return;
   }
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
   const hint = document.getElementById('hint');
 
   // ---- Tunable physics constants ----
@@ -19,7 +20,7 @@ function initPlatformerGame() {
   const JUMP_VELOCITY = -520;
   const MOVE_SPEED = 260;
   const FRICTION_GROUND = 0.85;
-  const TILE_SIZE = 16;
+  const TILE_SIZE = 32;
   const SCROLL_SPEED = 400; // px/s, editor camera pan
 
   // ---- Tile categories ----
@@ -82,15 +83,15 @@ function initPlatformerGame() {
   // ---- Default level ----
   const DEFAULT_LEVEL = {
     width: 800, height: 450,
-    playerStart: { x: 60, y: 300 },
+    playerStart: { x: 60, y: 280 },
     tiles: [
-      { x: 0,   y: 416, w: 800, h: 16, type: 'ground' },
-      { x: 150, y: 320, w: 128, h: 16, type: 'ground' },
-      { x: 340, y: 250, w: 128, h: 16, type: 'wood' },
-      { x: 540, y: 180, w: 144, h: 16, type: 'rock' },
-      { x: 20,  y: 200, w: 96,  h: 16, type: 'dirt' },
-      { x: 260, y: 400, w: 16,  h: 16, type: 'spike' },
-      { x: 700, y: 400, w: 16,  h: 16, type: 'trophy' }
+      { x: 0,   y: 416, w: 800, h: 34, type: 'ground' },
+      { x: 160, y: 320, w: 128, h: 32, type: 'ground' },
+      { x: 352, y: 256, w: 128, h: 32, type: 'wood' },
+      { x: 544, y: 192, w: 160, h: 32, type: 'rock' },
+      { x: 32,  y: 192, w: 96,  h: 32, type: 'dirt' },
+      { x: 256, y: 384, w: 32,  h: 32, type: 'spike' },
+      { x: 704, y: 384, w: 32,  h: 32, type: 'trophy' }
     ]
   };
 
@@ -101,7 +102,7 @@ function initPlatformerGame() {
       height: Number(raw.height) || 450,
       playerStart: {
         x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
-        y: (raw.playerStart && Number(raw.playerStart.y)) || 300
+        y: (raw.playerStart && Number(raw.playerStart.y)) || 280
       },
       tiles: Array.isArray(raw.tiles) ? raw.tiles
         .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
@@ -119,8 +120,8 @@ function initPlatformerGame() {
       lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
     }
 
-    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 16, lvl.playerStart.x));
-    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 16, lvl.playerStart.y));
+    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 32, lvl.playerStart.x));
+    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 48, lvl.playerStart.y));
 
     return lvl;
   }
@@ -149,7 +150,7 @@ function initPlatformerGame() {
   }
 
   // ---- Player ----
-  const player = { x: 60, y: 300, w: 16, h: 16, vx: 0, vy: 0, onGround: false };
+  const player = { x: 60, y: 280, w: 32, h: 48, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
     console.log(
       `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
@@ -316,8 +317,8 @@ function initPlatformerGame() {
   }));
   row1.appendChild(panelButton('New', () => {
     editorTiles.clear();
-    editorPlayerStart = { x: 60, y: 300 };
-    editorWidthTiles.value = 50; editorHeightTiles.value = 28;
+    editorPlayerStart = { x: 60, y: 280 };
+    editorWidthTiles.value = 25; editorHeightTiles.value = 14;
     applyEditorSize();
     camera.x = 0; camera.y = 0;
     levelNameInput.value = '';
@@ -334,7 +335,7 @@ function initPlatformerGame() {
   editorPanel.appendChild(row1);
 
   // --- Row 2: resize ---
-  let EDITOR_LEVEL_WIDTH = 960;
+  let EDITOR_LEVEL_WIDTH = 800;
   let EDITOR_LEVEL_HEIGHT = 448;
   const editorWidthTiles = panelNumberInput(EDITOR_LEVEL_WIDTH / TILE_SIZE);
   const editorHeightTiles = panelNumberInput(EDITOR_LEVEL_HEIGHT / TILE_SIZE);
@@ -500,7 +501,7 @@ function initPlatformerGame() {
   // ---- Editor working state ----
   const editorTiles = new Map(); // "gx,gy" -> type
   let editorTool = 'ground';
-  let editorPlayerStart = { x: 60, y: 300 };
+  let editorPlayerStart = { x: 60, y: 280 };
   let isPainting = false;
   let isPanning = false;
   let panStart = { x: 0, y: 0 };
@@ -970,7 +971,7 @@ function initPlatformerGame() {
     const spawnSY = editorPlayerStart.y - camera.y;
     ctx.fillStyle = '#f2c744';
     ctx.beginPath();
-    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 6, 0, Math.PI * 2);
+    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 10, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#12141c';
