@@ -176,24 +176,25 @@ function initPlatformerGame() {
       });
   }
 
-  function loadPresetLevel(filename) {
-    const url = `${REPO_BASE}/levels/${filename}`;
-    fetch(url)
-      .then(res => {
-        if (!res.ok) throw new Error(`Failed to load ${filename}`);
-        return res.json();
-      })
-      .then(raw => {
-        levelPlaylist = [];
-        currentLevel = sanitizeLevel(raw);
-        resetPlayer('preset');
-        camera.x = 0;
-        camera.y = 0;
-        levelComplete = false;
+  function loadPresetPlaylist(startIndex) {
+    Promise.all(presetLevels.map(filename =>
+      fetch(`${REPO_BASE}/levels/${filename}`)
+        .then(res => {
+          if (!res.ok) throw new Error(`Failed to load ${filename}`);
+          return res.json();
+        })
+        .then(raw => ({
+          name: filename.replace(/\.json$/i, ''),
+          level: sanitizeLevel(raw)
+        }))
+    ))
+      .then(loadedLevels => {
+        levelPlaylist = loadedLevels;
+        playPlaylistLevel(startIndex);
         state = 'play';
       })
       .catch(err => {
-        alert(`Could not load preset level: ${err.message}`);
+        alert(`Could not load preset pack: ${err.message}`);
       });
   }
 
@@ -635,7 +636,7 @@ function initPlatformerGame() {
     }
 
     if (state === 'levelSelect') {
-      const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40 };
+      const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40, label: 'Menu' };
       if (pointInRect(pos.x, pos.y, backBtn)) {
         state = 'menu';
         return;
@@ -646,10 +647,9 @@ function initPlatformerGame() {
       const startX = (canvas.width - btnW) / 2;
 
       for (let i = 0; i < presetLevels.length; i++) {
-        const filename = presetLevels[i];
         const itemRect = { x: startX, y: startY + i * (btnH + spacing), w: btnW, h: btnH };
         if (pointInRect(pos.x, pos.y, itemRect)) {
-          loadPresetLevel(filename);
+          loadPresetPlaylist(i);
           return;
         }
       }
@@ -920,7 +920,7 @@ function initPlatformerGame() {
       }
     }
 
-    const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40 };
+    const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40, label: 'Menu' };
     drawButton(backBtn, false);
   }
 
