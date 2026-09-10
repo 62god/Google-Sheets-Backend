@@ -23,23 +23,26 @@ function initPlatformerGame() {
   const SCROLL_SPEED = 400; // px/s, editor camera pan
 
   // ---- Tile categories ----
-  const SOLID_TYPES = ['ground', 'rock', 'wood'];
+  const SOLID_TYPES = ['ground', 'rock', 'wood', 'dirt'];
   const HAZARD_TYPES = ['spike'];
   const WIN_TYPES = ['trophy'];
   const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES, 'trophy'];
   const TILE_FALLBACK_COLORS = {
-    ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b', spike: '#c0392b', trophy: '#f1c40f'
+    ground: '#3a5f3a', rock: '#7a7a7a', wood: '#8b5a2b', dirt: '#8b4513', spike: '#c0392b', trophy: '#f1c40f'
   };
 
   // ---- Asset manifest ----
   const assetSources = {
-    player:    `${REPO_BASE}/assets/Sprites/player.png`,
-    ground:    `${REPO_BASE}/assets/Sprites/ground.png`,
-    rock:      `${REPO_BASE}/assets/Sprites/rock.png`,
-    wood:      `${REPO_BASE}/assets/Sprites/wood.png`,
-    spike:     `${REPO_BASE}/assets/Sprites/spike.png`,
-    trophy:    `${REPO_BASE}/assets/Sprites/trophy.png`,
-    jumpSound: `${REPO_BASE}/assets/audio/jump.mp3`
+    player:     `${REPO_BASE}/assets/Sprites/player.png`,
+    ground:     `${REPO_BASE}/assets/Sprites/ground.png`,
+    rock:       `${REPO_BASE}/assets/Sprites/rock.png`,
+    wood:       `${REPO_BASE}/assets/Sprites/wood.png`,
+    dirt:       `${REPO_BASE}/assets/Sprites/dirt.png`,
+    spike:      `${REPO_BASE}/assets/Sprites/spike.png`,
+    trophy:     `${REPO_BASE}/assets/Sprites/trophy.png`,
+    jumpSound:  `${REPO_BASE}/assets/audio/jump.mp3`,
+    deathSound: `${REPO_BASE}/assets/audio/death.mp3`,
+    music:      `${REPO_BASE}/assets/audio/music.mp3`
   };
   const assets = {};
 
@@ -54,6 +57,9 @@ function initPlatformerGame() {
         audio.oncanplaythrough = settle;
         audio.onerror = () => { console.warn(`Missing audio asset: ${key}`); assets[key] = null; settle(); };
         audio.src = src;
+        if (key === 'music') {
+          audio.loop = true;
+        }
         assets[key] = audio;
       } else {
         const img = new Image();
@@ -66,6 +72,12 @@ function initPlatformerGame() {
     function settle() { remaining--; if (remaining <= 0) onDone(); }
   }
 
+  function startMusic() {
+    if (assets.music && assets.music.paused) {
+      assets.music.play().catch(() => {});
+    }
+  }
+
   // ---- Default level ----
   const DEFAULT_LEVEL = {
     width: 800, height: 450,
@@ -75,7 +87,7 @@ function initPlatformerGame() {
       { x: 150, y: 320, w: 120, h: 20, type: 'ground' },
       { x: 340, y: 250, w: 120, h: 20, type: 'wood' },
       { x: 540, y: 180, w: 140, h: 20, type: 'rock' },
-      { x: 20,  y: 200, w: 90,  h: 20, type: 'ground' },
+      { x: 20,  y: 200, w: 90,  h: 20, type: 'dirt' },
       { x: 260, y: 410, w: 40,  h: 40, type: 'spike' },
       { x: 700, y: 370, w: 40,  h: 40, type: 'trophy' }
     ]
@@ -142,6 +154,10 @@ function initPlatformerGame() {
       `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
       `floorY=${levelFloorY(currentLevel).toFixed(1)} onGround=${player.onGround}`
     );
+    if (reason === 'hazard' && assets.deathSound) {
+      assets.deathSound.currentTime = 0;
+      assets.deathSound.play().catch(() => {});
+    }
     player.x = currentLevel.playerStart.x;
     player.y = currentLevel.playerStart.y;
     player.vx = 0; player.vy = 0; player.onGround = false;
@@ -192,6 +208,7 @@ function initPlatformerGame() {
         levelPlaylist = loadedLevels;
         playPlaylistLevel(startIndex);
         state = 'play';
+        startMusic();
       })
       .catch(err => {
         alert(`Could not load preset pack: ${err.message}`);
@@ -460,6 +477,7 @@ function initPlatformerGame() {
         playlistIndex = 0;
         playPlaylistLevel(0);
         state = 'play';
+        startMusic();
       });
     } else {
       readJSONFile(file, sanitized => {
@@ -468,6 +486,7 @@ function initPlatformerGame() {
         resetPlayer('import');
         camera.x = 0; camera.y = 0;
         state = 'play';
+        startMusic();
       });
     }
     menuImportInput.value = '';
@@ -619,6 +638,7 @@ function initPlatformerGame() {
     if (state === 'menu') {
       for (const b of menuButtons) {
         if (pointInRect(pos.x, pos.y, b)) {
+          startMusic();
           if (b.id === 'create') {
             loadLevelIntoEditor(currentLevel);
             levelNameInput.value = '';
