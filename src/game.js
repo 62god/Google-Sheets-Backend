@@ -118,6 +118,7 @@ function playPlaylistLevel(index) {
   if (index < 0 || index >= levelPlaylist.length) return;
   playlistIndex = index;
   currentLevel = sanitizeLevel(levelPlaylist[index].level);
+  resetPlayer('playlist-level');
   camera.x = 0;
   camera.y = 0;
   levelComplete = false;
@@ -414,6 +415,7 @@ menuImportInput.addEventListener('change', () => {
     readJSONFile(file, sanitized => {
       levelPlaylist = [];
       currentLevel = sanitized;
+      resetPlayer('import');
       camera.x = 0; camera.y = 0;
       state = 'play';
     });
