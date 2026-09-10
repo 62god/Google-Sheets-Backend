@@ -503,8 +503,8 @@ function initPlatformerGame() {
 
   const editorToolbar = (() => {
     const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
-                  { id: 'start', label: 'Spawn' },
-                  { id: 'erase', label: 'Erase' }];
+                      { id: 'start', label: 'Spawn' },
+                      { id: 'erase', label: 'Erase' }];
     let x = 10;
     const buttons = defs.map(d => {
       const btn = { ...d, x, y: 5, w: 72, h: 28 };
@@ -651,7 +651,7 @@ function initPlatformerGame() {
         return;
       }
 
-      let startY = 120;
+      let startY = 100;
       const btnW = 400, btnH = 40, spacing = 10;
       const startX = (canvas.width - btnW) / 2;
 
@@ -834,10 +834,17 @@ function initPlatformerGame() {
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - viewH), camera.y));
   }
 
-  // ---- High-detail crisp pixel fallback drawing for tiles ----
+  // ---- High-detail crisp pixel fallback drawing for tiles (with 1.5x trophy scaling) ----
   function drawTile(sx, sy, w, h, type) {
+    const scale = (type === 'trophy') ? 1.5 : 1;
+    const drawW = w * scale;
+    const drawH = h * scale;
+    
+    const drawX = sx - (drawW - w) / 2;
+    const drawY = sy - (drawH - h);
+
     if (assets[type]) {
-      ctx.drawImage(assets[type], sx, sy, w, h);
+      ctx.drawImage(assets[type], drawX, drawY, drawW, drawH);
       return;
     }
 
@@ -845,69 +852,67 @@ function initPlatformerGame() {
     ctx.imageSmoothingEnabled = false;
 
     if (type === 'ground') {
-      // Lush pixel grass top + rich dirt body
       ctx.fillStyle = '#4a7c3b';
-      ctx.fillRect(sx, sy, w, h * 0.3);
+      ctx.fillRect(drawX, drawY, drawW, drawH * 0.3);
       ctx.fillStyle = '#325426';
-      ctx.fillRect(sx, sy + h * 0.3, w, h * 0.1);
+      ctx.fillRect(drawX, drawY + drawH * 0.3, drawW, drawH * 0.1);
       ctx.fillStyle = '#8b5a2b';
-      ctx.fillRect(sx, sy + h * 0.4, w, h * 0.6);
-      // Pixel speckles for texture
+      ctx.fillRect(drawX, drawY + drawH * 0.4, drawW, drawH * 0.6);
       ctx.fillStyle = '#6d431c';
-      ctx.fillRect(sx + 4, sy + h * 0.5, 4, 4);
-      ctx.fillRect(sx + w - 12, sy + h * 0.7, 4, 4);
-      ctx.fillRect(sx + w / 2 - 2, sy + h * 0.8, 4, 4);
+      ctx.fillRect(drawX + 4, drawY + drawH * 0.5, 4, 4);
+      ctx.fillRect(drawX + drawW - 12, drawY + drawH * 0.7, 4, 4);
+      ctx.fillRect(drawX + drawW / 2 - 2, drawY + drawH * 0.8, 4, 4);
     } else if (type === 'rock') {
       ctx.fillStyle = '#7a8288';
-      ctx.fillRect(sx, sy, w, h);
+      ctx.fillRect(drawX, drawY, drawW, drawH);
       ctx.fillStyle = '#5c6368';
-      ctx.fillRect(sx + 4, sy + 4, w - 8, h - 8);
+      ctx.fillRect(drawX + 4, drawY + 4, drawW - 8, drawH - 8);
       ctx.fillStyle = '#9da4ab';
-      ctx.fillRect(sx + 6, sy + 6, w - 16, 4);
+      ctx.fillRect(drawX + 6, drawY + 6, drawW - 16, 4);
       ctx.fillStyle = '#43484d';
-      ctx.fillRect(sx + w - 10, sy + h - 12, 6, 6);
+      ctx.fillRect(drawX + drawW - 10, drawY + drawH - 12, 6, 6);
     } else if (type === 'wood') {
       ctx.fillStyle = '#8b5a2b';
-      ctx.fillRect(sx, sy, w, h);
+      ctx.fillRect(drawX, drawY, drawW, drawH);
       ctx.fillStyle = '#6b4420';
-      ctx.fillRect(sx, sy + 6, w, 4);
-      ctx.fillRect(sx, sy + h - 10, w, 4);
+      ctx.fillRect(drawX, drawY + 6, drawW, 4);
+      ctx.fillRect(drawX, drawY + drawH - 10, drawW, 4);
       ctx.fillStyle = '#a8733e';
-      ctx.fillRect(sx + 8, sy, 4, h);
-      ctx.fillRect(sx + w - 12, sy, 4, h);
+      ctx.fillRect(drawX + 8, drawY, 4, drawH);
+      ctx.fillRect(drawX + drawW - 12, drawY, 4, drawH);
     } else if (type === 'dirt') {
       ctx.fillStyle = '#784212';
-      ctx.fillRect(sx, sy, w, h);
+      ctx.fillRect(drawX, drawY, drawW, drawH);
       ctx.fillStyle = '#5c310b';
-      ctx.fillRect(sx + 4, sy + 4, 6, 6);
-      ctx.fillRect(sx + w - 10, sy + h - 10, 6, 6);
-      ctx.fillRect(sx + w / 2 - 4, sy + h / 2 - 4, 8, 6);
+      ctx.fillRect(drawX + 4, drawY + 4, 6, 6);
+      ctx.fillRect(drawX + drawW - 10, drawY + drawH - 10, 6, 6);
+      ctx.fillRect(drawX + drawW / 2 - 4, drawY + drawH / 2 - 4, 8, 6);
     } else if (type === 'spike') {
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
-      ctx.moveTo(sx, sy + h);
-      ctx.lineTo(sx + w / 2, sy + 2);
-      ctx.lineTo(sx + w, sy + h);
+      ctx.moveTo(drawX, drawY + drawH);
+      ctx.lineTo(drawX + drawW / 2, drawY + 2);
+      ctx.lineTo(drawX + drawW, drawY + drawH);
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = '#e74c3c';
       ctx.beginPath();
-      ctx.moveTo(sx + 4, sy + h);
-      ctx.lineTo(sx + w / 2, sy + 6);
-      ctx.lineTo(sx + w / 2, sy + h);
+      ctx.moveTo(drawX + 4, drawY + drawH);
+      ctx.lineTo(drawX + drawW / 2, drawY + 6);
+      ctx.lineTo(drawX + drawW / 2, drawY + drawH);
       ctx.closePath();
       ctx.fill();
     } else if (type === 'trophy') {
       ctx.fillStyle = '#f1c40f';
-      ctx.fillRect(sx + w * 0.3, sy + h * 0.2, w * 0.4, h * 0.5);
+      ctx.fillRect(drawX + drawW * 0.3, drawY + drawH * 0.2, drawW * 0.4, drawH * 0.5);
       ctx.fillStyle = '#d4ac0d';
-      ctx.fillRect(sx + w * 0.2, sy + h * 0.65, w * 0.6, h * 0.15);
-      ctx.fillRect(sx + w * 0.4, sy + h * 0.8, w * 0.2, h * 0.1);
+      ctx.fillRect(drawX + drawW * 0.2, drawY + drawH * 0.65, drawW * 0.6, drawH * 0.15);
+      ctx.fillRect(drawX + drawW * 0.4, drawY + drawH * 0.8, drawW * 0.2, drawH * 0.1);
       ctx.fillStyle = '#fef5d1';
-      ctx.fillRect(sx + w * 0.35, sy + h * 0.25, 4, 8);
+      ctx.fillRect(drawX + drawW * 0.35, drawY + drawH * 0.25, 4, 8);
     } else {
       ctx.fillStyle = '#555';
-      ctx.fillRect(sx, sy, w, h);
+      ctx.fillRect(drawX, drawY, drawW, drawH);
     }
     ctx.restore();
   }
@@ -970,165 +975,141 @@ function initPlatformerGame() {
         const filename = presetLevels[i];
         const displayName = filename.replace(/\.json$/i, '');
         const itemRect = { x: startX, y: startY + i * (btnH + spacing), w: btnW, h: btnH };
-
+        
         ctx.fillStyle = '#2c2f3a';
         ctx.fillRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
         ctx.strokeStyle = '#cfd3dc';
         ctx.strokeRect(itemRect.x, itemRect.y, itemRect.w, itemRect.h);
-
         ctx.fillStyle = '#f0f2f5';
-        ctx.font = '14px sans-serif';
+        ctx.font = '16px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(displayName, itemRect.x + itemRect.w / 2, itemRect.y + itemRect.h / 2);
+        ctx.fillText(`Play ${displayName}`, itemRect.x + itemRect.w / 2, itemRect.y + itemRect.h / 2);
       }
     }
 
+    // Draw Back button
     const backBtn = { x: canvas.width / 2 - 100, y: 380, w: 200, h: 40, label: 'Menu' };
-    drawButton(backBtn, false);
-  }
-
-  function drawEditor() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#87ceeb';
-    ctx.fillRect(0, 40, canvas.width, canvas.height - 40);
-
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    const startGX = Math.floor(camera.x / TILE_SIZE);
-    for (let gx = startGX; gx * TILE_SIZE - camera.x < canvas.width; gx++) {
-      const sx = gx * TILE_SIZE - camera.x;
-      ctx.beginPath(); ctx.moveTo(sx, 40); ctx.lineTo(sx, canvas.height); ctx.stroke();
-    }
-    const startGY = Math.floor(camera.y / TILE_SIZE);
-    for (let gy = startGY; gy * TILE_SIZE - camera.y < canvas.height; gy++) {
-      const sy = Math.max(40, gy * TILE_SIZE - camera.y);
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
-    }
-
-    for (const [key, type] of editorTiles.entries()) {
-      const [gx, gy] = key.split(',').map(Number);
-      const sx = gx * TILE_SIZE - camera.x;
-      const sy = gy * TILE_SIZE - camera.y;
-      if (sx + TILE_SIZE < 0 || sx > canvas.width || sy + TILE_SIZE < 40 || sy > canvas.height) continue;
-      drawTile(sx, sy, TILE_SIZE, TILE_SIZE, type);
-    }
-
-    const spawnSX = editorPlayerStart.x - camera.x;
-    const spawnSY = editorPlayerStart.y - camera.y;
-    ctx.fillStyle = '#f2c744';
-    ctx.beginPath();
-    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#12141c';
-    ctx.fillRect(0, 0, canvas.width, 40);
-    for (const b of editorToolbar) drawButton(b, b.id === editorTool);
-  }
-
-  function drawPlayer() {
-    const psx = player.x - camera.x;
-    const psy = player.y - camera.y;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    if (assets.player) {
-      ctx.drawImage(assets.player, psx, psy, player.w, player.h);
-    } else {
-      // 32x32 crisp pixel player fallback (matching tile size)
-      // Body (red tunic)
-      ctx.fillStyle = '#e94f37';
-      ctx.fillRect(psx + 6, psy + 10, 20, 16);
-      // Head / Face
-      ctx.fillStyle = '#f5c6a5';
-      ctx.fillRect(psx + 8, psy + 2, 16, 10);
-      // Hat/Hair
-      ctx.fillStyle = '#c0392b';
-      ctx.fillRect(psx + 6, psy, 20, 4);
-      // Eyes
-      ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(psx + 11, psy + 5, 2, 2);
-      ctx.fillRect(psx + 19, psy + 5, 2, 2);
-      // Boots
-      ctx.fillStyle = '#34495e';
-      ctx.fillRect(psx + 7, psy + 26, 6, 6);
-      ctx.fillRect(psx + 19, psy + 26, 6, 6);
-    }
-    ctx.restore();
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
+    ctx.strokeStyle = '#cfd3dc';
+    ctx.strokeRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
+    ctx.fillStyle = '#f0f2f5';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(backBtn.label, backBtn.x + backBtn.w / 2, backBtn.y + backBtn.h / 2);
   }
 
   function drawPlay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#87ceeb';
+    ctx.fillStyle = '#4a6fa5'; // Sky background
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    // Draw level tiles
     for (const t of currentLevel.tiles) {
-      const sx = t.x - camera.x, sy = t.y - camera.y;
-      if (sx + t.w < 0 || sx > canvas.width || sy + t.h < 0 || sy > canvas.height) continue;
-      drawTile(sx, sy, t.w, t.h, t.type);
+      drawTile(t.x, t.y, t.w, t.h, t.type);
     }
 
-    drawPlayer();
+    // Draw player
+    if (assets.player) {
+      ctx.drawImage(assets.player, player.x, player.y, player.w, player.h);
+    } else {
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+    }
+    ctx.restore();
 
     if (levelComplete) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '28px sans-serif';
+      ctx.fillStyle = '#f1c40f';
+      ctx.font = '32px sans-serif';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('Level Pack Complete!', canvas.width / 2, canvas.height / 2 - 20);
-      ctx.font = '16px sans-serif';
-      ctx.fillText('Press Esc to return to Menu', canvas.width / 2, canvas.height / 2 + 20);
+      ctx.fillText('Level Complete!', canvas.width / 2, canvas.height / 2);
     }
   }
 
-  // ---- UI visibility + hint text per state ----
-  function updateUI() {
-    editorPanel.style.display = state === 'editor' ? 'flex' : 'none';
-    if (state === 'menu') {
-      hint.textContent = 'Click Create to build, Import to load a pack/JSON, or Preset Levels to play built-ins';
-      canvas.style.cursor = 'default';
-    } else if (state === 'levelSelect') {
-      hint.textContent = 'Select a preset level to play • Esc: menu';
-      canvas.style.cursor = 'default';
-    } else if (state === 'editor') {
-      hint.textContent = editorTool === 'pan'
-        ? 'Pan mode: drag to scroll • Click ✋ Pan again to resume editing • Esc: menu'
-        : 'Click/drag to paint tiles • Arrow keys scroll • Esc: menu';
-      canvas.style.cursor = editorTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'crosshair';
-    } else if (state === 'play') {
-      hint.textContent = levelComplete ? 'Press Esc to return to Menu' : 'Move: ← → or A/D • Jump: Space/↑/W • Esc: menu';
-      canvas.style.cursor = 'default';
+  function drawEditor() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1b1f2a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    // Level boundaries
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, EDITOR_LEVEL_WIDTH, EDITOR_LEVEL_HEIGHT);
+    ctx.lineWidth = 1;
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    for (let x = 0; x <= EDITOR_LEVEL_WIDTH; x += TILE_SIZE) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, EDITOR_LEVEL_HEIGHT); ctx.stroke();
+    }
+    for (let y = 0; y <= EDITOR_LEVEL_HEIGHT; y += TILE_SIZE) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(EDITOR_LEVEL_WIDTH, y); ctx.stroke();
+    }
+
+    // Tiles
+    for (const [key, type] of editorTiles.entries()) {
+      const [gx, gy] = key.split(',').map(Number);
+      drawTile(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE, type);
+    }
+
+    // Spawn marker
+    ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
+    ctx.fillRect(editorPlayerStart.x, editorPlayerStart.y, TILE_SIZE, TILE_SIZE);
+    
+    ctx.restore();
+
+    // Editor Toolbar Background
+    ctx.fillStyle = '#12141c';
+    ctx.fillRect(0, 0, canvas.width, 40);
+
+    // Toolbar buttons
+    for (const b of editorToolbar) {
+      const active = (b.id === editorTool) || (b.id === 'pan' && editorTool === 'pan');
+      drawButton(b, active);
     }
   }
 
-  // ---- Main loop ----
+  // ---- Main Game Loop ----
   let lastTime = performance.now();
-  function loop(now) {
-    const dt = Math.min((now - lastTime) / 1000, 0.033);
-    lastTime = now;
+  function loop(time) {
+    const dt = Math.min((time - lastTime) / 1000, 0.1);
+    lastTime = time;
 
-    updateUI();
-
-    if (state === 'play') updatePlay(dt);
-    else if (state === 'editor') updateEditor(dt);
-
-    if (state === 'menu') drawMenu();
-    else if (state === 'levelSelect') drawLevelSelect();
-    else if (state === 'editor') drawEditor();
-    else if (state === 'play') drawPlay();
+    // Route drawing and updates based on state
+    if (state === 'menu') {
+      drawMenu();
+      editorPanel.style.display = 'none';
+    } else if (state === 'levelSelect') {
+      drawLevelSelect();
+      editorPanel.style.display = 'none';
+    } else if (state === 'editor') {
+      updateEditor(dt);
+      drawEditor();
+      editorPanel.style.display = 'flex';
+    } else if (state === 'play') {
+      updatePlay(dt);
+      drawPlay();
+      editorPanel.style.display = 'none';
+    }
 
     requestAnimationFrame(loop);
   }
 
+  // Boot up the game once assets load
   loadAssets(() => {
     startMusic();
-    lastTime = performance.now();
     requestAnimationFrame(loop);
   });
 }
 
-if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', initPlatformerGame);
-} else {
-  initPlatformerGame();
-}
+// Automatically start if script is loaded
+initPlatformerGame();
