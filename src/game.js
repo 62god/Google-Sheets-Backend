@@ -6,14 +6,22 @@
 function initPlatformerGame() {
   const REPO_BASE = window.REPO_BASE || '';
 
-  const canvas = document.getElementById('gameCanvas');
+  // Safely locate or create the canvas to prevent container startup crashes
+  let canvas = document.getElementById('gameCanvas');
   if (!canvas) {
-    console.error("Game canvas element not found!");
+    canvas = document.createElement('canvas');
+    canvas.id = 'gameCanvas';
+    canvas.width = 800;
+    canvas.height = 450;
+    document.body.appendChild(canvas);
+  }
+  
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) {
+    console.error("Failed to acquire 2D rendering context.");
     return;
   }
-  const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  const hint = document.getElementById('hint');
 
   // ---- Tunable physics constants ----
   const GRAVITY = 1400;
@@ -21,7 +29,7 @@ function initPlatformerGame() {
   const MOVE_SPEED = 280;
   const FRICTION_GROUND = 0.85;
   const TILE_SIZE = 32;
-  const SCROLL_SPEED = 400; // px/s, editor camera pan
+  const SCROLL_SPEED = 400;
 
   // ---- Tile categories ----
   const SOLID_TYPES = ['ground', 'rock', 'wood', 'dirt'];
@@ -48,18 +56,24 @@ function initPlatformerGame() {
     const keys = Object.keys(assetSources);
     let remaining = keys.length;
     if (remaining === 0) { onDone(); return; }
+    
     keys.forEach(key => {
       const src = assetSources[key];
       if (/\.(mp3|wav|ogg)$/i.test(src)) {
-        const audio = new Audio();
-        audio.oncanplaythrough = settle;
-        audio.onerror = () => { assets[key] = null; settle(); };
-        audio.src = src;
-        if (key === 'music') {
-          audio.loop = true;
-          audio.volume = 0.9;
+        try {
+          const audio = new Audio();
+          audio.oncanplaythrough = settle;
+          audio.onerror = () => { assets[key] = null; settle(); };
+          audio.src = src;
+          if (key === 'music') {
+            audio.loop = true;
+            audio.volume = 0.9;
+          }
+          assets[key] = audio;
+        } catch (e) {
+          assets[key] = null;
+          settle();
         }
-        assets[key] = audio;
       } else {
         const img = new Image();
         img.onload = settle;
@@ -68,7 +82,13 @@ function initPlatformerGame() {
         assets[key] = img;
       }
     });
-    function settle() { remaining--; if (remaining <= 0) onDone(); }
+    
+    function settle() { 
+      remaining--; 
+      if (remaining <= 0 && typeof onDone === 'function') {
+        onDone(); 
+      }
+    }
   }
 
   function startMusic() {
@@ -98,14 +118,15 @@ function initPlatformerGame() {
 
   // ---- Level sanitation ----
   function sanitizeLevel(raw) {
+    const safeRaw = raw || {};
     const lvl = {
-      width: Number(raw.width) || 800,
-      height: Number(raw.height) || 450,
+      width: Number(safeRaw.width) || 800,
+      height: Number(safeRaw.height) || 450,
       playerStart: {
-        x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
-        y: (raw.playerStart && Number(raw.playerStart.y)) || 260
+        x: (safeRaw.playerStart && Number(safeRaw.playerStart.x)) || 60,
+        y: (safeRaw.playerStart && Number(safeRaw.playerStart.y)) || 260
       },
-      tiles: Array.isArray(raw.tiles) ? raw.tiles
+      tiles: Array.isArray(safeRaw.tiles) ? safeRaw.tiles
         .filter(t => t && typeof t.x === 'number' && typeof t.y === 'number' && t.w && t.h && t.type)
         .map(t => ({ x: t.x, y: t.y, w: t.w, h: t.h, type: t.type }))
         : []
@@ -115,8 +136,8 @@ function initPlatformerGame() {
     const maxBottom = lvl.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
 
     lvl.width = Math.max(lvl.width, maxRight + 200, canvas.width);
-    if (raw.height && Number(raw.height) > 0) {
-      lvl.height = Math.max(Number(raw.height), canvas.height);
+    if (safeRaw.height && Number(safeRaw.height) > 0) {
+      lvl.height = Math.max(Number(safeRaw.height), canvas.height);
     } else {
       lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
     }
@@ -144,18 +165,14 @@ function initPlatformerGame() {
     levelComplete = false;
   }
 
-  function levelFloorY(level) {
-    if (!level.tiles || level.tiles.length === 0) return level.height;
-    const maxBottom = level.tiles.reduce((m, t) => Math.max(m, t.y + t.h), 0);
-    return Math.max(level.height, maxBottom);
-  }
-
-  // ---- Player (Matched to ground tile size: 32x32 px) ----
+  // ---- Player ----
   const player = { x: 60, y: 260, w: TILE_SIZE, h: TILE_SIZE, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
     if (reason === 'hazard' && sfxEnabled && assets.deathSound) {
-      assets.deathSound.currentTime = 0;
-      assets.deathSound.play().catch(() => {});
+      try {
+        assets.deathSound.currentTime = 0;
+        assets.deathSound.play().catch(() => {});
+      } catch (e) {}
     }
     player.x = currentLevel.playerStart.x;
     player.y = currentLevel.playerStart.y;
@@ -209,7 +226,7 @@ function initPlatformerGame() {
         state = 'play';
       })
       .catch(err => {
-        alert(`Could not load preset pack: ${err.message}`);
+        console.error(`Could not load preset pack: ${err.message}`);
       });
   }
 
@@ -306,7 +323,7 @@ function initPlatformerGame() {
   row1.appendChild(levelNameInput);
   row1.appendChild(panelButton('Save', () => {
     const name = levelNameInput.value.trim();
-    if (!name) { alert('Type a level name first.'); return; }
+    if (!name) return;
     const lib = loadLibrary();
     lib[name] = exportEditorLevel();
     saveLibrary(lib);
@@ -380,11 +397,8 @@ function initPlatformerGame() {
       try {
         const parsed = JSON.parse(reader.result);
         onLoaded(sanitizeLevel(parsed));
-      } catch (err) {
-        alert('That file is not valid level JSON: ' + err.message);
-      }
+      } catch (err) {}
     };
-    reader.onerror = () => alert('Could not read that file.');
     reader.readAsText(file);
   }
 
@@ -393,7 +407,7 @@ function initPlatformerGame() {
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
       script.onload = () => processZip(file, onLevelsLoaded);
-      script.onerror = () => alert('Failed to load JSZip library for reading zip archives.');
+      script.onerror = () => {};
       document.head.appendChild(script);
     } else {
       processZip(file, onLevelsLoaded);
@@ -404,7 +418,7 @@ function initPlatformerGame() {
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const zip = new JSZip();
+        const zip = new window.JSZip();
         const contents = await zip.loadAsync(reader.result);
         const extractedLevels = [];
 
@@ -428,12 +442,8 @@ function initPlatformerGame() {
         extractedLevels.sort((a, b) => a.number - b.number);
         if (extractedLevels.length > 0) {
           onLevelsLoaded(extractedLevels);
-        } else {
-          alert('No valid level JSON files found in the ZIP archive.');
         }
-      } catch (err) {
-        alert('Could not read ZIP archive: ' + err.message);
-      }
+      } catch (err) {}
     };
     reader.readAsArrayBuffer(file);
   }
@@ -458,7 +468,6 @@ function initPlatformerGame() {
     uploadInput.value = '';
   });
 
-  // --- Main menu's Import (.zip or .json) ---
   const menuImportInput = document.createElement('input');
   menuImportInput.type = 'file';
   menuImportInput.accept = '.zip,application/zip,application/json,.json';
@@ -502,7 +511,7 @@ function initPlatformerGame() {
   ];
 
   // ---- Editor working state ----
-  const editorTiles = new Map(); // "gx,gy" -> type
+  const editorTiles = new Map();
   let editorTool = 'ground';
   let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
@@ -570,7 +579,6 @@ function initPlatformerGame() {
     }
   }, { passive: false });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
-  function isDown(...codes) { return codes.some(c => keys[c]); }
 
   // ---- Input: mouse / drag-painting ----
   function getCanvasPos(e) {
@@ -808,21 +816,23 @@ function initPlatformerGame() {
   function updatePlay(dt) {
     if (levelComplete) return;
 
-    if (isDown('ArrowLeft', 'KeyA')) {
+    if (keys['ArrowLeft'] || keys['KeyA']) {
       player.vx = -MOVE_SPEED;
-    } else if (isDown('ArrowRight', 'KeyD')) {
+    } else if (keys['ArrowRight'] || keys['KeyD']) {
       player.vx = MOVE_SPEED;
     } else {
       player.vx *= FRICTION_GROUND;
       if (Math.abs(player.vx) < 5) player.vx = 0;
     }
 
-    if (isDown('Space', 'ArrowUp', 'KeyW') && player.onGround) {
+    if ((keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && player.onGround) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
       if (sfxEnabled && assets.jumpSound) {
-        assets.jumpSound.currentTime = 0;
-        assets.jumpSound.play().catch(() => {});
+        try {
+          assets.jumpSound.currentTime = 0;
+          assets.jumpSound.play().catch(() => {});
+        } catch (e) {}
       }
     }
 
@@ -859,18 +869,17 @@ function initPlatformerGame() {
   // ---- Update: editor ----
   function updateEditor(dt) {
     const viewH = canvas.height - 40;
-    if (isDown('ArrowLeft')) camera.x -= SCROLL_SPEED * dt;
-    if (isDown('ArrowRight')) camera.x += SCROLL_SPEED * dt;
-    if (isDown('ArrowUp')) camera.y -= SCROLL_SPEED * dt;
-    if (isDown('ArrowDown')) camera.y += SCROLL_SPEED * dt;
+    if (keys['ArrowLeft']) camera.x -= SCROLL_SPEED * dt;
+    if (keys['ArrowRight']) camera.x += SCROLL_SPEED * dt;
+    if (keys['ArrowUp']) camera.y -= SCROLL_SPEED * dt;
+    if (keys['ArrowDown']) camera.y += SCROLL_SPEED * dt;
     camera.x = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_WIDTH - canvas.width), camera.x));
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - viewH), camera.y));
   }
 
-  // ---- High-detail crisp pixel fallback drawing for tiles ----
+  // ---- Drawing helpers ----
   function drawTile(sx, sy, w, h, type) {
     if (assets[type]) {
-      // For trophy or any sprite, normalize to fill TILE_SIZE (w x h) matching other sprites
       ctx.drawImage(assets[type], sx, sy, w, h);
       return;
     }
@@ -885,35 +894,19 @@ function initPlatformerGame() {
       ctx.fillRect(sx, sy + h * 0.3, w, h * 0.1);
       ctx.fillStyle = '#8b5a2b';
       ctx.fillRect(sx, sy + h * 0.4, w, h * 0.6);
-      ctx.fillStyle = '#6d431c';
-      ctx.fillRect(sx + 4, sy + h * 0.5, 4, 4);
-      ctx.fillRect(sx + w - 12, sy + h * 0.7, 4, 4);
-      ctx.fillRect(sx + w / 2 - 2, sy + h * 0.8, 4, 4);
     } else if (type === 'rock') {
       ctx.fillStyle = '#7a8288';
       ctx.fillRect(sx, sy, w, h);
       ctx.fillStyle = '#5c6368';
       ctx.fillRect(sx + 4, sy + 4, w - 8, h - 8);
-      ctx.fillStyle = '#9da4ab';
-      ctx.fillRect(sx + 6, sy + 6, w - 16, 4);
-      ctx.fillStyle = '#43484d';
-      ctx.fillRect(sx + w - 10, sy + h - 12, 6, 6);
     } else if (type === 'wood') {
       ctx.fillStyle = '#8b5a2b';
       ctx.fillRect(sx, sy, w, h);
       ctx.fillStyle = '#6b4420';
       ctx.fillRect(sx, sy + 6, w, 4);
-      ctx.fillRect(sx, sy + h - 10, w, 4);
-      ctx.fillStyle = '#a8733e';
-      ctx.fillRect(sx + 8, sy, 4, h);
-      ctx.fillRect(sx + w - 12, sy, 4, h);
     } else if (type === 'dirt') {
       ctx.fillStyle = '#784212';
       ctx.fillRect(sx, sy, w, h);
-      ctx.fillStyle = '#5c310b';
-      ctx.fillRect(sx + 4, sy + 4, 6, 6);
-      ctx.fillRect(sx + w - 10, sy + h - 10, 6, 6);
-      ctx.fillRect(sx + w / 2 - 4, sy + h / 2 - 4, 8, 6);
     } else if (type === 'spike') {
       ctx.fillStyle = '#c0392b';
       ctx.beginPath();
@@ -922,21 +915,9 @@ function initPlatformerGame() {
       ctx.lineTo(sx + w, sy + h);
       ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = '#e74c3c';
-      ctx.beginPath();
-      ctx.moveTo(sx + 4, sy + h);
-      ctx.lineTo(sx + w / 2, sy + 6);
-      ctx.lineTo(sx + w / 2, sy + h);
-      ctx.closePath();
-      ctx.fill();
     } else if (type === 'trophy') {
       ctx.fillStyle = '#f1c40f';
       ctx.fillRect(sx + w * 0.3, sy + h * 0.2, w * 0.4, h * 0.5);
-      ctx.fillStyle = '#d4ac0d';
-      ctx.fillRect(sx + w * 0.2, sy + h * 0.65, w * 0.6, h * 0.15);
-      ctx.fillRect(sx + w * 0.4, sy + h * 0.8, w * 0.2, h * 0.1);
-      ctx.fillStyle = '#fef5d1';
-      ctx.fillRect(sx + w * 0.35, sy + h * 0.25, 4, 8);
     } else {
       ctx.fillStyle = '#555';
       ctx.fillRect(sx, sy, w, h);
@@ -1080,17 +1061,21 @@ function initPlatformerGame() {
 
   let lastTime = performance.now();
   function loop(now) {
-    const dt = Math.min(0.1, (now - lastTime) / 1000);
-    lastTime = now;
+    try {
+      const dt = Math.min(0.1, (now - lastTime) / 1000);
+      lastTime = now;
 
-    if (state === 'play') {
-      startMusic();
-      updatePlay(dt);
-    } else if (state === 'editor') {
-      updateEditor(dt);
+      if (state === 'play') {
+        startMusic();
+        updatePlay(dt);
+      } else if (state === 'editor') {
+        updateEditor(dt);
+      }
+
+      draw();
+    } catch (e) {
+      // Guard against frame-level exceptions throwing into the Apps Script container
     }
-
-    draw();
     requestAnimationFrame(loop);
   }
 
@@ -1098,4 +1083,11 @@ function initPlatformerGame() {
     editorPanel.style.display = 'flex';
     requestAnimationFrame(loop);
   });
+}
+
+// Auto-run if loaded directly
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  initPlatformerGame();
+} else {
+  window.addEventListener('DOMContentLoaded', initPlatformerGame);
 }
