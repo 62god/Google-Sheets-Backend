@@ -22,78 +22,6 @@ function initPlatformerGame() {
   let assetsLoaded = false;
   const TILE_SIZE = 32;
 
-  // Audio volume states
-  let musicVolume = 0.5;
-  let sfxVolume = 0.5;
-
-  // Create Settings UI Dynamically
-  const settingsBtn = document.createElement('button');
-  settingsBtn.textContent = '⚙️ Settings';
-  settingsBtn.style.position = 'absolute';
-  settingsBtn.style.top = '10px';
-  settingsBtn.style.right = '10px';
-  settingsBtn.style.zIndex = '10';
-  settingsBtn.style.padding = '6px 12px';
-  settingsBtn.style.background = '#2c2f3a';
-  settingsBtn.style.color = '#cfd3dc';
-  settingsBtn.style.border = '1px solid #4e5568';
-  settingsBtn.style.borderRadius = '4px';
-  settingsBtn.style.cursor = 'pointer';
-  document.body.appendChild(settingsBtn);
-
-  const settingsModal = document.createElement('div');
-  settingsModal.style.position = 'absolute';
-  settingsModal.style.top = '50px';
-  settingsModal.style.right = '10px';
-  settingsModal.style.zIndex = '10';
-  settingsModal.style.background = '#1b1f2a';
-  settingsModal.style.border = '2px solid #2c2f3a';
-  settingsModal.style.borderRadius = '6px';
-  settingsModal.style.padding = '15px';
-  settingsModal.style.color = '#cfd3dc';
-  settingsModal.style.display = 'none';
-  settingsModal.style.fontFamily = 'sans-serif';
-  settingsModal.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
-  settingsModal.innerHTML = `
-    <h3 style="margin: 0 0 10px 0; font-size: 15px;">Audio Settings</h3>
-    <div style="margin-bottom: 10px;">
-      <label style="display: block; font-size: 12px; margin-bottom: 4px;">Music Volume: <span id="musicVal">50%</span></label>
-      <input type="range" id="musicSlider" min="0" max="100" value="50" style="width: 150px; cursor: pointer;">
-    </div>
-    <div style="margin-bottom: 12px;">
-      <label style="display: block; font-size: 12px; margin-bottom: 4px;">SFX Volume: <span id="sfxVal">50%</span></label>
-      <input type="range" id="sfxSlider" min="0" max="100" value="50" style="width: 150px; cursor: pointer;">
-    </div>
-    <button id="closeSettings" style="width: 100%; padding: 6px; background: #2c2f3a; color: #cfd3dc; border: 1px solid #4e5568; border-radius: 4px; cursor: pointer;">Close</button>
-  `;
-  document.body.appendChild(settingsModal);
-
-  settingsBtn.addEventListener('click', () => {
-    settingsModal.style.display = settingsModal.style.display === 'none' ? 'block' : 'none';
-  });
-
-  document.getElementById('closeSettings').addEventListener('click', () => {
-    settingsModal.style.display = 'none';
-  });
-
-  const musicSlider = document.getElementById('musicSlider');
-  const sfxSlider = document.getElementById('sfxSlider');
-  const musicVal = document.getElementById('musicVal');
-  const sfxVal = document.getElementById('sfxVal');
-
-  musicSlider.addEventListener('input', (e) => {
-    musicVolume = e.target.value / 100;
-    musicVal.textContent = `${e.target.value}%`;
-    if (assets.music) assets.music.volume = musicVolume;
-  });
-
-  sfxSlider.addEventListener('input', (e) => {
-    sfxVolume = e.target.value / 100;
-    sfxVal.textContent = `${e.target.value}%`;
-    if (assets.jumpSound) assets.jumpSound.volume = sfxVolume;
-    if (assets.deathSound) assets.deathSound.volume = sfxVolume;
-  });
-
   // Load assets with crossOrigin support for Google Apps Script sandbox
   function loadAssets(callback) {
     const keys = Object.keys(assetSources);
@@ -122,7 +50,7 @@ function initPlatformerGame() {
         };
       } else {
         const img = new Image();
-        img.crossOrigin = 'anonymous';
+        img.crossOrigin = 'anonymous'; // Required for Google Apps Script iframe canvas rendering
         img.onload = () => {
           assets[key] = img;
           checkDone();
@@ -140,16 +68,6 @@ function initPlatformerGame() {
       loadedCount++;
       if (loadedCount === keys.length) {
         assetsLoaded = true;
-        
-        // Initialize volume and start looping music
-        if (assets.music) {
-          assets.music.loop = true;
-          assets.music.volume = musicVolume;
-          assets.music.play().catch(() => {});
-        }
-        if (assets.jumpSound) assets.jumpSound.volume = sfxVolume;
-        if (assets.deathSound) assets.deathSound.volume = sfxVolume;
-
         callback();
       }
     }
@@ -174,7 +92,7 @@ function initPlatformerGame() {
     grounded: false
   };
 
-  // Sample level platforms and items
+  // Sample level platforms and items (standardized to TILE_SIZE)
   const platforms = [
     { x: 0, y: 400, width: 800, height: 50, type: 'ground' },
     { x: 200, y: 300, width: 128, height: TILE_SIZE, type: 'wood' },
@@ -210,6 +128,7 @@ function initPlatformerGame() {
         player.y < p.y + p.height &&
         player.y + player.height > p.y
       ) {
+        // Landing from above
         if (player.vy > 0 && player.y + player.height - player.vy <= p.y) {
           player.y = p.y - player.height;
           player.vy = 0;
@@ -224,12 +143,11 @@ function initPlatformerGame() {
       player.grounded = false;
       if (assets.jumpSound) {
         assets.jumpSound.currentTime = 0;
-        assets.jumpSound.volume = sfxVolume;
         assets.jumpSound.play().catch(() => {});
       }
     }
 
-    // Hazard checks
+    // Hazard checks (reset position on spike)
     hazards.forEach(h => {
       if (
         player.x < h.x + h.width &&
@@ -265,7 +183,6 @@ function initPlatformerGame() {
     player.vy = 0;
     if (assets.deathSound) {
       assets.deathSound.currentTime = 0;
-      assets.deathSound.volume = sfxVolume;
       assets.deathSound.play().catch(() => {});
     }
   }
@@ -295,7 +212,7 @@ function initPlatformerGame() {
       }
     });
 
-    // Draw items (Trophy)
+    // Draw items (Trophy is forced to TILE_SIZE x TILE_SIZE to match other game objects)
     items.forEach(item => {
       if (!item.collected) {
         const sprite = assets[item.type];
@@ -323,11 +240,13 @@ function initPlatformerGame() {
     requestAnimationFrame(gameLoop);
   }
 
+  // Start asset loading then start loop
   loadAssets(() => {
     gameLoop();
   });
 }
 
+// Initialize when script executes
 window.initPlatformerGame = initPlatformerGame;
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
   initPlatformerGame();
