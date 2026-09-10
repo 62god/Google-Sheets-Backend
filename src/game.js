@@ -1005,8 +1005,8 @@ function initPlatformerGame() {
   }
 
   // ---- Tile Renderer ----
-  function drawTile(sx, sy, w, h, type, rotation = 0) {
-    const exactRotation = (Number(rotation) || 0) % 360;
+ function drawTile(sx, sy, w, h, type, rotation = 0) {
+    const exactRotation = (Math.round((Number(rotation) || 0) / 90) * 90) % 360;
     ctx.save();
     ctx.translate(sx + w / 2, sy + h / 2);
     if (exactRotation !== 0) {
