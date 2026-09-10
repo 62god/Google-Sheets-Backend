@@ -27,7 +27,7 @@ function initPlatformerGame() {
   const SOLID_TYPES = ['ground', 'rock', 'wood', 'dirt'];
   const HAZARD_TYPES = ['spike'];
   const WIN_TYPES = ['trophy'];
-  const PALETTE_TYPES = [...SOLID_TYPES, ...HAZARD_TYPES, 'trophy'];
+  const PALETTE_TYPES = ['blocks', ...HAZARD_TYPES, 'trophy'];
 
   // ---- Asset manifest ----
   const assetSources = {
@@ -87,6 +87,7 @@ function initPlatformerGame() {
   // ---- Default level ----
   const DEFAULT_LEVEL = {
     width: 800, height: 450,
+    backgroundColor: '#4a6fa5',
     playerStart: { x: 60, y: 260 },
     tiles: [
       { x: 0,   y: 416, w: 800, h: 34, type: 'ground' },
@@ -104,6 +105,7 @@ function initPlatformerGame() {
     const lvl = {
       width: Number(raw.width) || 800,
       height: Number(raw.height) || 450,
+      backgroundColor: raw.backgroundColor || '#4a6fa5',
       playerStart: {
         x: (raw.playerStart && Number(raw.playerStart.x)) || 60,
         y: (raw.playerStart && Number(raw.playerStart.y)) || 260
@@ -343,13 +345,41 @@ function initPlatformerGame() {
     camera.y = Math.max(0, Math.min(Math.max(0, EDITOR_LEVEL_HEIGHT - (canvas.height - 40)), camera.y));
   }
 
+  // ---- Block Type & Background Color Controls ----
+  let selectedBlockType = 'ground';
+  const blockTypeSelect = document.createElement('select');
+  SOLID_TYPES.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t[0].toUpperCase() + t.slice(1);
+    blockTypeSelect.appendChild(opt);
+  });
+  blockTypeSelect.addEventListener('change', () => {
+    selectedBlockType = blockTypeSelect.value;
+  });
+
+  const bgColorPicker = document.createElement('input');
+  bgColorPicker.type = 'color';
+  bgColorPicker.value = '#4a6fa5';
+  bgColorPicker.style.width = '35px';
+  bgColorPicker.style.height = '24px';
+  bgColorPicker.style.border = 'none';
+  bgColorPicker.style.cursor = 'pointer';
+  bgColorPicker.addEventListener('input', () => {
+    currentLevel.backgroundColor = bgColorPicker.value;
+  });
+
   const row2 = document.createElement('div');
   row2.style.display = 'flex'; row2.style.gap = '6px'; row2.style.alignItems = 'center';
-  row2.appendChild(panelLabel('Width (tiles):'));
+  row2.appendChild(panelLabel('Width:'));
   row2.appendChild(editorWidthTiles);
-  row2.appendChild(panelLabel('Height (tiles):'));
+  row2.appendChild(panelLabel('Height:'));
   row2.appendChild(editorHeightTiles);
   row2.appendChild(panelButton('Resize', applyEditorSize));
+  row2.appendChild(panelLabel('Block:'));
+  row2.appendChild(blockTypeSelect);
+  row2.appendChild(panelLabel('BG Color:'));
+  row2.appendChild(bgColorPicker);
   editorPanel.appendChild(row2);
 
   const uploadInput = document.createElement('input');
@@ -491,7 +521,7 @@ function initPlatformerGame() {
 
   // ---- Editor working state ----
   const editorTiles = new Map();
-  let editorTool = 'ground';
+  let editorTool = 'blocks';
   let editorPlayerStart = { x: 60, y: 260 };
   let isPainting = false;
   let isPanning = false;
@@ -502,9 +532,13 @@ function initPlatformerGame() {
   let dragStartGY = null;
 
   const editorToolbar = (() => {
-    const defs = [...PALETTE_TYPES.map(t => ({ id: t, label: t[0].toUpperCase() + t.slice(1) })),
-                      { id: 'start', label: 'Spawn' },
-                      { id: 'erase', label: 'Erase' }];
+    const defs = [
+      { id: 'blocks', label: 'Blocks' },
+      { id: 'spike', label: 'Spike' },
+      { id: 'trophy', label: 'Trophy' },
+      { id: 'start', label: 'Spawn' },
+      { id: 'erase', label: 'Erase' }
+    ];
     let x = 10;
     const buttons = defs.map(d => {
       const btn = { ...d, x, y: 5, w: 72, h: 28 };
@@ -515,7 +549,7 @@ function initPlatformerGame() {
     buttons.push({ id: 'menu', label: 'Menu', x: canvas.width - 90, y: 5, w: 80, h: 28 });
     return buttons;
   })();
-  let lastPaintTool = 'ground';
+  let lastPaintTool = 'blocks';
 
   function loadLevelIntoEditor(lvl) {
     editorTiles.clear();
@@ -529,6 +563,7 @@ function initPlatformerGame() {
     EDITOR_LEVEL_HEIGHT = lvl.height;
     editorWidthTiles.value = Math.round(EDITOR_LEVEL_WIDTH / TILE_SIZE);
     editorHeightTiles.value = Math.round(EDITOR_LEVEL_HEIGHT / TILE_SIZE);
+    bgColorPicker.value = lvl.backgroundColor || '#4a6fa5';
     camera.x = 0; camera.y = 0;
   }
 
@@ -541,6 +576,7 @@ function initPlatformerGame() {
     return sanitizeLevel({
       width: EDITOR_LEVEL_WIDTH,
       height: EDITOR_LEVEL_HEIGHT,
+      backgroundColor: bgColorPicker.value,
       playerStart: editorPlayerStart,
       tiles
     });
@@ -584,6 +620,7 @@ function initPlatformerGame() {
     const key = `${gx},${gy}`;
     if (editorTool === 'erase') editorTiles.delete(key);
     else if (editorTool === 'start') editorPlayerStart = { x: gx * TILE_SIZE, y: gy * TILE_SIZE };
+    else if (editorTool === 'blocks') editorTiles.set(key, selectedBlockType);
     else editorTiles.set(key, editorTool);
   }
 
@@ -879,7 +916,7 @@ function initPlatformerGame() {
 
   // ---- Tile Renderer ----
   function drawTile(sx, sy, w, h, type) {
-    const scale = 1; // Standardized scale so all tiles match dimensions directly
+    const scale = 1;
     const drawW = w * scale;
     const drawH = h * scale;
     
@@ -1070,7 +1107,7 @@ function initPlatformerGame() {
 
   function drawPlay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#4a6fa5';
+    ctx.fillStyle = currentLevel.backgroundColor || '#4a6fa5';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
