@@ -19,7 +19,7 @@ function initPlatformerGame() {
   const JUMP_VELOCITY = -520;
   const MOVE_SPEED = 260;
   const FRICTION_GROUND = 0.85;
-  const TILE_SIZE = 40;
+  const TILE_SIZE = 16;
   const SCROLL_SPEED = 400; // px/s, editor camera pan
 
   // ---- Tile categories ----
@@ -59,6 +59,7 @@ function initPlatformerGame() {
         audio.src = src;
         if (key === 'music') {
           audio.loop = true;
+          audio.volume = 0.9;
         }
         assets[key] = audio;
       } else {
@@ -83,13 +84,13 @@ function initPlatformerGame() {
     width: 800, height: 450,
     playerStart: { x: 60, y: 300 },
     tiles: [
-      { x: 0,   y: 410, w: 800, h: 40, type: 'ground' },
-      { x: 150, y: 320, w: 120, h: 20, type: 'ground' },
-      { x: 340, y: 250, w: 120, h: 20, type: 'wood' },
-      { x: 540, y: 180, w: 140, h: 20, type: 'rock' },
-      { x: 20,  y: 200, w: 90,  h: 20, type: 'dirt' },
-      { x: 260, y: 410, w: 40,  h: 40, type: 'spike' },
-      { x: 700, y: 370, w: 40,  h: 40, type: 'trophy' }
+      { x: 0,   y: 416, w: 800, h: 16, type: 'ground' },
+      { x: 150, y: 320, w: 128, h: 16, type: 'ground' },
+      { x: 340, y: 250, w: 128, h: 16, type: 'wood' },
+      { x: 540, y: 180, w: 144, h: 16, type: 'rock' },
+      { x: 20,  y: 200, w: 96,  h: 16, type: 'dirt' },
+      { x: 260, y: 400, w: 16,  h: 16, type: 'spike' },
+      { x: 700, y: 400, w: 16,  h: 16, type: 'trophy' }
     ]
   };
 
@@ -118,8 +119,8 @@ function initPlatformerGame() {
       lvl.height = Math.max(lvl.height, maxBottom + 200, canvas.height);
     }
 
-    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 32, lvl.playerStart.x));
-    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 32, lvl.playerStart.y));
+    lvl.playerStart.x = Math.max(0, Math.min(lvl.width - 16, lvl.playerStart.x));
+    lvl.playerStart.y = Math.max(0, Math.min(lvl.height - 16, lvl.playerStart.y));
 
     return lvl;
   }
@@ -148,7 +149,7 @@ function initPlatformerGame() {
   }
 
   // ---- Player ----
-  const player = { x: 60, y: 300, w: 32, h: 32, vx: 0, vy: 0, onGround: false };
+  const player = { x: 60, y: 300, w: 16, h: 16, vx: 0, vy: 0, onGround: false };
   function resetPlayer(reason) {
     console.log(
       `[reset] reason=${reason || 'unspecified'} player.y=${player.y.toFixed(1)} ` +
@@ -208,7 +209,6 @@ function initPlatformerGame() {
         levelPlaylist = loadedLevels;
         playPlaylistLevel(startIndex);
         state = 'play';
-        startMusic();
       })
       .catch(err => {
         alert(`Could not load preset pack: ${err.message}`);
@@ -317,7 +317,7 @@ function initPlatformerGame() {
   row1.appendChild(panelButton('New', () => {
     editorTiles.clear();
     editorPlayerStart = { x: 60, y: 300 };
-    editorWidthTiles.value = 20; editorHeightTiles.value = 11;
+    editorWidthTiles.value = 50; editorHeightTiles.value = 28;
     applyEditorSize();
     camera.x = 0; camera.y = 0;
     levelNameInput.value = '';
@@ -334,8 +334,8 @@ function initPlatformerGame() {
   editorPanel.appendChild(row1);
 
   // --- Row 2: resize ---
-  let EDITOR_LEVEL_WIDTH = 2400;
-  let EDITOR_LEVEL_HEIGHT = 440;
+  let EDITOR_LEVEL_WIDTH = 960;
+  let EDITOR_LEVEL_HEIGHT = 448;
   const editorWidthTiles = panelNumberInput(EDITOR_LEVEL_WIDTH / TILE_SIZE);
   const editorHeightTiles = panelNumberInput(EDITOR_LEVEL_HEIGHT / TILE_SIZE);
 
@@ -477,7 +477,6 @@ function initPlatformerGame() {
         playlistIndex = 0;
         playPlaylistLevel(0);
         state = 'play';
-        startMusic();
       });
     } else {
       readJSONFile(file, sanitized => {
@@ -486,7 +485,6 @@ function initPlatformerGame() {
         resetPlayer('import');
         camera.x = 0; camera.y = 0;
         state = 'play';
-        startMusic();
       });
     }
     menuImportInput.value = '';
@@ -638,7 +636,6 @@ function initPlatformerGame() {
     if (state === 'menu') {
       for (const b of menuButtons) {
         if (pointInRect(pos.x, pos.y, b)) {
-          startMusic();
           if (b.id === 'create') {
             loadLevelIntoEditor(currentLevel);
             levelNameInput.value = '';
@@ -973,7 +970,7 @@ function initPlatformerGame() {
     const spawnSY = editorPlayerStart.y - camera.y;
     ctx.fillStyle = '#f2c744';
     ctx.beginPath();
-    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 10, 0, Math.PI * 2);
+    ctx.arc(spawnSX + TILE_SIZE / 2, spawnSY + TILE_SIZE / 2, 6, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#12141c';
@@ -1058,6 +1055,7 @@ function initPlatformerGame() {
   }
 
   loadAssets(() => {
+    startMusic();
     lastTime = performance.now();
     requestAnimationFrame(loop);
   });
