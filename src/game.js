@@ -1,4 +1,4 @@
-function initPlatformerGame() {
+ function initPlatformerGame() {
 
   const canvas = document.getElementById('gameCanvas');
 
@@ -110,12 +110,7 @@ function initPlatformerGame() {
 
     <div style="margin-bottom: 10px;">
 
-
-      <label style="display: block; font-size: 12px; margin-bottom:
-
-4px;">Music Volume: <span
-
-id="musicVal">50%</span></label>
+      <label style="display: block; font-size: 12px; margin-bottom: 4px;">Music Volume: <span id="musicVal">50%</span></label>
 
       <input type="range" id="musicSlider" min="0" max="100" value="50" style="width: 150px; cursor: pointer;">
 
@@ -123,23 +118,13 @@ id="musicVal">50%</span></label>
 
     <div style="margin-bottom: 12px;">
 
-
-      <label style="display: block; font-size: 12px; margin-bottom:
-
-4px;">SFX Volume: <span
-
-id="sfxVal">50%</span></label>
+      <label style="display: block; font-size: 12px; margin-bottom: 4px;">SFX Volume: <span id="sfxVal">50%</span></label>
 
       <input type="range" id="sfxSlider" min="0" max="100" value="50" style="width: 150px; cursor: pointer;">
 
     </div>
 
-
-    <button id="closeSettings" style="width: 100%; padding: 6px;
-
-background: #2c2f3a; color: #cfd3dc; border: 1px solid #4e5568;
-
-border-radius: 4px; cursor: pointer;">Close</button>
+    <button id="closeSettings" style="width: 100%; padding: 6px; background: #2c2f3a; color: #cfd3dc; border: 1px solid #4e5568; border-radius: 4px; cursor: pointer;">Close</button>
 
   `;
 
